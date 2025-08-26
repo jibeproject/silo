@@ -32,11 +32,11 @@ import java.util.Objects;
 public class SiloMELAWS {
 
     private final static Logger logger = LogManager.getLogger(SiloMELAWS.class);
-    private final static String outputDir = "/home/ubuntu/melbourne/scenOutput/base/"; // Replace with your output directory
-    private final static String bucketName = "phmlandusetransportmatsimhealthdata";// Replace with your S3 bucket name
+    private final static String outputDir = "/home/ubuntu/jibe/melbourne/scenOutput/base/"; // Replace with your output directory
+    private final static String bucketName = "jibe.model.melbourne";// Replace with your S3 bucket name
     private final static String folderName = "melbourne/simulationResults/base/"; //Replace with your target folder name in S3 bucket
     private final static String region = "ap-southeast-2";// Replace with your AWS region (e.g., “us-east-1")
-    private final static String instanceId = "i-0994f34e4fb1b499d"; // Replace with your instance id
+    private final static String instanceId = "i-0b6a96bdbf7b41d16"; // Replace with your instance id
 
 
     public static void main(String[] args) throws IOException {
