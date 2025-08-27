@@ -61,12 +61,15 @@ import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
 import org.matsim.vehicles.VehiclesFactory;
-import routing.*;
-//import routing.*;
 import routing.components.Gradient;
 import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
+import routing.TransportModeNetworkFilter;
+import routing.WalkConfigGroup;
+import routing.BicycleConfigGroup;
+import routing.WalkModule;
+import routing.BicycleModule;
 
 import java.io.File;
 import java.util.*;
@@ -187,7 +190,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         assembledMultiScenario = scenarioAssembler.assembleMultiScenarios(initialMatsimConfig, year, travelTimes);
 
         //run car truck simulation
-        runCarTruckSimulation(year, assembledMultiScenario);
+//        runCarTruckSimulation(year, assembledMultiScenario);
 
         //run bike ped simulation
         runBikePedSimulation(year, assembledMultiScenario);
