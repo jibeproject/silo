@@ -190,7 +190,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         assembledMultiScenario = scenarioAssembler.assembleMultiScenarios(initialMatsimConfig, year, travelTimes);
 
         //run car truck simulation
-//        runCarTruckSimulation(year, assembledMultiScenario);
+        runCarTruckSimulation(year, assembledMultiScenario);
 
         //run bike ped simulation
         runBikePedSimulation(year, assembledMultiScenario);
@@ -263,7 +263,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             matsimScenario.getConfig().qsim().setVehicleBehavior(QSimConfigGroup.VehicleBehavior.teleport);
             matsimScenario.getConfig().qsim().setUsePersonIdForMissingVehicleId(true);
 
-            // Create active mode networkk
+            // Create active mode network
             Network activeNetwork = extractModeSpecificNetwork(
                     matsimScenario.getNetwork(),
                     new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk))
