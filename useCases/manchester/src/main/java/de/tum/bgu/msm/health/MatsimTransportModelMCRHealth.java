@@ -62,10 +62,7 @@ import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
 import org.matsim.vehicles.VehiclesFactory;
-import routing.WalkConfigGroup;
-import routing.BicycleConfigGroup;
-import routing.WalkModule;
-import routing.BicycleModule;
+import routing.*;
 import routing.components.Gradient;
 import routing.components.JctStress;
 import routing.components.LinkAmbience;
@@ -261,11 +258,8 @@ public final class MatsimTransportModelMCRHealth implements TransportModel {
             matsimScenario.getConfig().qsim().setVehicleBehavior(QSimConfigGroup.VehicleBehavior.teleport);
             matsimScenario.getConfig().qsim().setUsePersonIdForMissingVehicleId(true);
 
-            // Create active mode network
-            Network activeNetwork = extractModeSpecificNetwork(
-                    matsimScenario.getNetwork(),
-                    new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk))
-            );
+            // Create active mode networkk
+            Network activeNetwork = extractModeSpecificNetwork(matsimScenario.getNetwork(),new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk)));
             matsimScenario.setNetwork(activeNetwork);
 
             //set up controler
@@ -627,7 +621,7 @@ public final class MatsimTransportModelMCRHealth implements TransportModel {
                     dataContainer.getGeoData().getZones().values());
         }
     }
-
+    
     public static Network extractModeSpecificNetwork(Network fullNetwork, Set<String> transportModes) {
         Network modeSpecificNetwork = NetworkUtils.createNetwork();
         new TransportModeNetworkFilter(fullNetwork).filter(modeSpecificNetwork, transportModes);
