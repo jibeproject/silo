@@ -67,6 +67,8 @@ import routing.components.Gradient;
 import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
+import routing.TransportModeNetworkFilter;
+
 
 import java.io.File;
 import java.util.*;
