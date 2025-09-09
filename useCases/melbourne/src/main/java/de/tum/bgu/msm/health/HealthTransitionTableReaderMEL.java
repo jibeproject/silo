@@ -21,7 +21,7 @@ public class HealthTransitionTableReaderMEL {
     static java.util.Properties properties = getMelbourneProperties();
     private final String CATCHMENT_ID_COLUMN = properties.getProperty("zone.catchment.id.field");
     public EnumMap<Diseases, Map<String, Double>> readData(DataContainerHealth dataContainer, String path) {
-        logger.info("Reading health disease prob table from csv file");
+        logger.info("Reading health disease prob table from csv file: {}", path);
 
         EnumMap<Diseases, Map<String, Double>> healthDiseaseData = new EnumMap<>(Diseases.class);
         Set<String> diseasesNotInLookup = new HashSet<>();

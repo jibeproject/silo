@@ -133,8 +133,10 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         internalTravelTimes.initialize(dataContainer.getGeoData(), matsimData);
 
         if (properties.transportModel.matsimInitialEventsFile == null) {
-            //TODO: comment out for longitudinal simulation. need to make it more general
-            runTransportModel(properties.main.startYear);
+            if (properties.main.endYear==properties.main.startYear) {
+                // Only run here for cross-sectional analysis, not longitudinal
+                runTransportModel(properties.main.startYear);
+            }
         } else {
             String eventsFile = properties.main.baseDirectory + properties.transportModel.matsimInitialEventsFile;
             replayFromEvents(eventsFile);

@@ -131,7 +131,6 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
         new HealthDiseaseTrackerWriter(this).writeHealthDiseaseTracking(filepp);
     }
 
-    // Remove @Override from these methods
     public void writePersonExposureData(int year) {
         final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
         String filepp = outputDirectory
@@ -180,8 +179,7 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
     @Override
     public Map<Id<Link>, LinkInfo> getLinkInfoByDay(Day day){
         return linkInfoByDay.get(day);
-    }
-
+    };
 
     @Override
     public void setLinkInfo(Map<Id<Link>, LinkInfo> linkInfo) {

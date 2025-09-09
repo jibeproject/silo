@@ -8,6 +8,7 @@ import de.tum.bgu.msm.health.data.*;
 import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.disease.HealthExposures;
 import de.tum.bgu.msm.health.disease.RelativeRisksDisease;
+import de.tum.bgu.msm.health.io.InjuryRRTableReader;
 import de.tum.bgu.msm.models.AbstractModel;
 import de.tum.bgu.msm.models.ModelUpdateListener;
 import de.tum.bgu.msm.properties.Properties;
@@ -43,9 +44,11 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
     @Override
     public void endYear(int year) {
         logger.warn("Health disease model end year:" + year);
-        if(year == properties.main.startYear ||properties.healthData.exposureModelYears.contains(year)) {
+        if (year == properties.main.startYear || properties.healthData.exposureModelYears.contains(year)) {
             calculateRelativeRisk();
         }
+
+        // transition probs and health statuses
         updateDiseaseProbability(properties.healthData.adjustByRelativeRisk);
         updateHealthDiseaseStates(year);
     }
@@ -175,9 +178,11 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
         if(activateInjuries){
             // Prepare fatalities map by mode and age (gender ??)
             Map<String, Map<String, Double>> FatalityProbabilities = createProbabilityMap();
+            CalibrationFactors calibrationFactors = new CalibrationFactors();
+            Map<String, EnumMap<Gender, Map<String, InjuryRRTableReader. DataEntry>>> injuryData = ((HealthDataContainerImpl) dataContainer).getHealthInjuryRRdata();
 
             // Set up the injury sampler and process the injured people
-            InjurySampler injSampler = new InjurySampler();
+            InjurySampler injSampler = new InjurySampler(properties, calibrationFactors, injuryData, random);
 
             // The target come from the accidentModel, they should be add to the HealthDataContainer
             /*
@@ -188,14 +193,15 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
              */
 
             // Process injury transitions
-            injSampler.processInjuries2(dataContainer, FatalityProbabilities);
+            injSampler.processInjuries2(dataContainer);
         }
     }
 
     private void initializeHealthDiseaseStates() {
         Map<Integer, List<Diseases>> prevData = ((HealthDataContainerImpl) dataContainer).getPrevalenceData();
         for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
-            if (prevData.keySet().contains(person.getId()) && (!prevData.get(person.getId()).contains(null))) {
+            if (prevData.keySet().contains(person.getId()) && (!prevData.get(person.getId()).contains(null)) &&
+                    person.getAge() > 17) {
                 List<String> diseaseList = prevData.get(person.getId())  // Returns List<Diseases>
                         .stream()                                      // Convert List to Stream
                         .map(Enum::name)                               // Map each enum to its name
@@ -230,12 +236,43 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                 }
 
                 //TODO: control random number? survival equation
-                if (random.nextFloat() < (personHealth.getCurrentDiseaseProb().get(diseases))) {
+                if (random.nextDouble() < (personHealth.getCurrentDiseaseProb().get(diseases))) {
                     if (!personHealth.getCurrentDisease().contains(diseases)) {
                         personHealth.getCurrentDisease().add(diseases);
                         newDisease.add(diseases.toString());
                     }
                 }
+            }
+
+            // Set remission in terms of years - this is year_remission -1, so with 2, the remission_year is 1 year
+            int year_remission = 2;
+            int targetYear = year - year_remission;
+
+            List<String> trackerYearLag = personHealth.getHealthDiseaseTracker().get(targetYear);
+            List<String> trackerPrevYear = personHealth.getHealthDiseaseTracker().get(year - 1);
+
+            if (trackerYearLag != null &&
+                    targetYear >= Properties.get().main.startYear &&
+                    trackerYearLag.contains(Diseases.depression.toString()) &&
+                    trackerPrevYear != null &&
+                    trackerPrevYear.contains(Diseases.depression.toString())) {
+
+                //System.out.println(personHealth.getHealthDiseaseTracker().toString());
+
+                // Create a new modifiable list to avoid changing identity of singleton lists
+                List<String> updatedList = new ArrayList<>(trackerPrevYear);
+
+                // Only remove the first occurrence of "depression" (if present)
+                updatedList.remove(Diseases.depression.toString());
+
+                if (updatedList.isEmpty()) {
+                    updatedList.add("healthy");
+                }
+                // Update the map with the new list for year - 1
+                personHealth.getHealthDiseaseTracker().put(year - 1, updatedList);
+
+                //System.out.println("depression removed from: " + personHealth.getId());
+
             }
 
             //update Disease track map
@@ -249,11 +286,24 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                 }
             } else {
                 List<String> fullDisease = new ArrayList<>();
-                if (personHealth.getHealthDiseaseTracker().get(year - 1) != null) {
+
+                // DO NOT add previous states when a person has died in the injury model. These states are exclusive.
+                if (personHealth.getHealthDiseaseTracker().get(year - 1) != null &&
+                        !(newDisease.contains(Diseases.dead_bike.toString()) ||
+                                newDisease.contains(Diseases.dead_walk.toString()) ||
+                                newDisease.contains(Diseases.dead_car.toString())) &&
+                        !(((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_bike) ||
+                                ((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_walk) ||
+                                ((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_car)))
+                {
                     fullDisease.addAll(personHealth.getHealthDiseaseTracker().get(year - 1)); // get old diseases
                 }
-                fullDisease.addAll(newDisease); // add new diseases
-                fullDisease.remove("healthy");
+
+                newDisease.stream()
+                        .filter(d -> !fullDisease.contains(d))
+                        .forEach(fullDisease::add);
+                    fullDisease.remove("healthy");
+
                 personHealth.getHealthDiseaseTracker().put(year, fullDisease);
             }
         }
