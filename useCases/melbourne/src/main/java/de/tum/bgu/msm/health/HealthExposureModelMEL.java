@@ -868,19 +868,20 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
 
         //
-        long start = System.nanoTime();
-        LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
-        long end = System.nanoTime();
-        logger.info("Router initialization time: " + (end - start) / 1e9 + " seconds");
-        PopulationFactory factory = PopulationUtils.getFactory();
-
-        //
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
         AtomicInteger counter = new AtomicInteger();
         logger.info("Partition Size: " + partitionSize);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
 
         for (final List<Trip> partition : partitions) {
+
+            //
+            long start = System.nanoTime();
+            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
+            long end = System.nanoTime();
+            logger.info("Router initialization time: " + (end - start) / 1e9 + " seconds");
+            PopulationFactory factory = PopulationUtils.getFactory();
+
             executor.addTaskToQueue(() -> {
                 try {
 
