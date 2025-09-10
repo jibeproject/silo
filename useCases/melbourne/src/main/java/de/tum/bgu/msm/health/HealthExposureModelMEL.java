@@ -877,8 +877,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     int counterr = 0;
                     for (Trip trip : partition) {
 
-                        if(LongMath.isPowerOfTwo(counterr)) {
-                            logger.info(counterr + " in " + id);
+                        if (LongMath.isPowerOfTwo(counterr)) {
+                            logger.info(String.format("Partition %d: Processing trip %d of %d (%.2f%%) [Trip ID: %s]",
+                                    id, counterr + 1, partition.size(), 100.0 * (counterr + 1) / partition.size(), trip.getId()));
                         }
 
                         Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
