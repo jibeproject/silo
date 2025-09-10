@@ -517,18 +517,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
     }
 
-    /*
-    private void writeAndClearTrafficFlows(int year, Network network) {
-        for (String modeAdjusted : Set.of("car", "walk", "bike")) {
-            for (Day day : Day.values()) {
-                writeTrafficFlowsToCSV(year, day, modeAdjusted, network);
-                trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
-            }
-        }
-    }
-
-     */
-
     private void writeAndClearTrafficFlows(int year, Network network, Day day) {
         for (String modeAdjusted : Set.of("car", "walk", "bike")) {
             writeTrafficFlowsToCSV(year, day, modeAdjusted, network);

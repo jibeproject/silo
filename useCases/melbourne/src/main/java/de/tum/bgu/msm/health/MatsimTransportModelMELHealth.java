@@ -172,13 +172,13 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
     }
 
     private void runMitoModel(int year) {
-        logger.warn("Running MITO model only for year " + year + ".");
+        logger.warn("Running MITO model only for year {}.", year);
         ((MitoMatsimScenarioAssemblerMEL)scenarioAssembler).runMitoStandalone(year);
     }
 
 
     private void runTransportModel(int year) {
-        logger.warn("Running MATSim transport model for year " + year + ".");
+        logger.warn("Running MATSim transport model for year {}.", year);
         Map<Day, Scenario> assembledMultiScenario;
         TravelTimes travelTimes = dataContainer.getTravelTimes();
         if (year == properties.main.baseYear &&
@@ -216,7 +216,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
                 }
             }
 
-            logger.warn("Running MATSim transport model for " + day + " Bike&Ped scenario " + year + ".");
+            logger.warn("Running MATSim transport model for Bike&Ped scenario {}: {} ", year, day);
             //initial bike, ped simulation config
             Config bikePedConfig = ConfigUtils.loadConfig(initialMatsimConfig.getContext());
             bikePedConfig.addModule(new BicycleConfigGroup());
@@ -226,7 +226,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             //initialize scenario
             MutableScenario matsimScenario = (MutableScenario) ScenarioUtils.loadScenario(bikePedConfig);
             matsimScenario.setPopulation(populationBikePed);
-            logger.info("total population " + day + " | Bike Walk: " + populationBikePed.getPersons().size());
+            logger.info("total population {} | Bike Walk: {}", day, populationBikePed.getPersons().size());
 
             // set vehicles
             EnumMap<Mode, EnumMap<MitoGender, Map<Integer,Double>>> allSpeeds = ((DataContainerHealth)dataContainer).getAvgSpeeds();
@@ -279,7 +279,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
 
             controlerBikePed.run();
-            logger.warn("Running MATSim transport model for " + day + " Bike&Ped scenario " + year + " finished.");
+            logger.warn("Completed MATSim transport model for Bike&Ped scenario {}: {}", year, day);
         }
     }
 
@@ -305,12 +305,12 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
                 throw new RuntimeException("Unrecognised day " + day);
             }
 
-            logger.info(day + " truck sample: " + truckSample);
+            logger.info("{} truck sample: {}", day, truckSample);
             if(truckSample < 1.) {
                 PopulationUtils.sampleDown(populationCarTruck, truckSample);
             }
 
-            logger.warn("MATSim truck population: " + day + "|" + year + "|" + populationCarTruck.getPersons().size());
+            logger.info("MATSim truck population: {}|{}|{}", day, year, populationCarTruck.getPersons().size());
 
             // Through traffic not estimated for Melbourne; omitted
             // See Manchester implementation for approach for re-adding this
@@ -326,7 +326,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             logger.warn("MATSim car/truck: " + day + "|" + year + "|" + populationCarTruck.getPersons().size());
 
 
-            logger.warn("Running MATSim transport model for " + day + " car scenario " + year + ".");
+            logger.warn("Running MATSim transport model for car scenario {}: {}", year, day);
             //initialize car truck config
             Config carTruckConfig = ConfigUtils.loadConfig(initialMatsimConfig.getContext());
             finalizeCarTruckConfig(carTruckConfig, year, day);
@@ -357,7 +357,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             //set up controler
             final Controler controlerCar = new Controler(matsimScenario);
             controlerCar.run();
-            logger.warn("Running MATSim transport model for " + day + " car scenario " + year + " finished.");
+            logger.warn("Completed MATSim transport model for car scenario {}: {}", year, day);
 
             // Get travel Times from MATSim - weekday
             if(day.equals(Day.thursday)){
