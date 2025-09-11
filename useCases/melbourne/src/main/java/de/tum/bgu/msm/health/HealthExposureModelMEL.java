@@ -855,6 +855,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 logger.error("No travel time/disutility for mode: " + mode);
         }
 
+        // Pre-cache commonly used objects
+        final Network network = scenario.getNetwork();
+        final Map<Coord, Node> coordToNodeCache = new ConcurrentHashMap<>();
+        final Map<Integer, Person> personCache = new ConcurrentHashMap<>();
+        final Map<String, VehicleType> vehicleTypeCache = new ConcurrentHashMap<>();
+        final boolean isActiveMode = mode.equals(Mode.walk) || mode.equals(Mode.bicycle);
+        final String transportModeString = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
+
         //
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
         AtomicInteger counter = new AtomicInteger();
@@ -865,7 +873,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             //
             long start = System.nanoTime();
-            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
+            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(network,travelDisutility,travelTime);
             long end = System.nanoTime();
             logger.info("Router initialization time: " + (end - start) / 1e9 + " seconds");
             PopulationFactory factory = PopulationUtils.getFactory();
@@ -882,17 +890,30 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                     id, counterr + 1, partition.size(), 100.0 * (counterr + 1) / partition.size(), trip.getId()));
                         }
 
-                        Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
-                        Node destinationNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripDestination());
+                        // Cache network node lookups
+                        Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
+                                coord -> NetworkUtils.getNearestNode(network, coord));
+                        Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
+                                coord -> NetworkUtils.getNearestNode(network, coord));
 
                         // Calculate exposures for outbound path
-                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes()*60;
+                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
 
-                        // Create person and vehicle for each person (i.e., trip) for active traveller
+                        // Create person and vehicle for active traveller
                         Vehicle vehicle = null;
                         org.matsim.api.core.v01.population.Person person = null;
-                        if(mode.equals(Mode.walk)||mode.equals(Mode.bicycle)) {
-                            Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+
+                        if(isActiveMode) {
+                            // Cache person lookup
+                            Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
+                                    personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
+
+                            if (siloPerson == null) {
+                                logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
+                                NO_PATH_TRIP.getAndIncrement();
+                                continue;
+                            }
+
                             MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
                             int age = siloPerson.getAge();
 
@@ -901,11 +922,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             person.getAttributes().putAttribute("sex",gender.toString());
                             person.getAttributes().putAttribute("age",age);
 
+                            // Cache vehicle type lookup
+                            String vehicleKey = transportModeString + gender + age;
+                            VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
+                                    key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
+
 
                             Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
-                            String key = (mode.equals(Mode.walk)? TransportMode.walk : TransportMode.bike) + gender + age;
-                            VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class));
-                            vehicle = fac.createVehicle(vehicleId,vehicleType);
+                            vehicle = fac.createVehicle(vehicleId, vehicleType);
                         }
 
                         LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
@@ -990,12 +1014,21 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         List<VisitedLink> visitedLinksPath = new ArrayList<>();
 
+        // Pre-compute mode-specific values
+        final String modeAdjusted = getAdjustedModeName(mode);
+        final boolean isWeekday = weekdays.contains(trip.getDepartureDay());
+        final int dayCode = trip.getDepartureDay().getDayCode();
+
+        // Cache person data once per trip
+        final Person tripPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+        final int agePerson = tripPerson.getAge();
+        final Gender genderPerson = tripPerson.getGender();
+
         for(Link link : path.links) {
             double enterTimeInSecond = (double) departureTimeInSecond + pathTime;
 
             // Update counts for traffic flows estimation
             int hour = (int) (enterTimeInSecond / 3600) % 24;
-            String modeAdjusted = getAdjustedModeName(mode);
             trafficFlowsByDayModeLinkHour.get(trip.getDepartureDay())
                     .get(modeAdjusted)
                     .computeIfAbsent(link.getId(), k -> new ConcurrentHashMap<>())
@@ -1030,16 +1063,16 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             if(linkInfo!=null) {
 
-                int dayCode = trip.getDepartureDay().getDayCode();
                 double startDayHour = enterTimeInSecond / 3600.;
                 double endDayHour = (enterTimeInSecond + linkTime)/ 3600.;
+                int currentDayCode = dayCode;
 
                 for(double currentDayHour = startDayHour; currentDayHour < endDayHour;) {
                     //check if start hour is already next day, it could be that trip starts at 23:30, after travelling (e.g. 40 mins), activity start time is next day
                     //the limitation is already we move it to next day, the AP and noise data is still retrived from the current day. because to save memory, we handle trips day by day and only retrive AP noise data of the corresponding day
                     //so it might slightly overestimate the personal exposure, if we use weekday for (next day) saturday
                     if(currentDayHour >= 24){
-                        dayCode++;
+                        currentDayCode++;
                         currentDayHour = currentDayHour - 24;
                         endDayHour = endDayHour - 24;
                     }
@@ -1048,7 +1081,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     int nextDayHour = exactDayHour + 1;
                     double durationInThisHour = Math.min(endDayHour, nextDayHour) - currentDayHour;
 
-                    int exactWeekHour = exactDayHour + 24 * dayCode;
+                    int exactWeekHour = exactDayHour + 24 * currentDayCode;
 
                     if(exactWeekHour > 167){
                         break;
@@ -1104,8 +1137,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 }
 
                 //
-                int agePerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson()).getAge();
-                Gender genderPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson()).getGender();
 
                 double AgeGenderRR = 1.;
                 AgeGenderRR = getCasualtyRR_byAge_Gender(genderPerson, agePerson, trip.getTripMode());
@@ -1518,7 +1549,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }else if ("school".equals(tripDestinationType)){
             return "ss" + tripDestinationMicroId;
         }else {
-            logger.warn("Unknown receiver point type: " + tripDestinationType);
+            logger.warn("Unknown receiver point type: {}", tripDestinationType);
         }
 
         return null;

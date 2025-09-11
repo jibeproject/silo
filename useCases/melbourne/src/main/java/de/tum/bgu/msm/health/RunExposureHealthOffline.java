@@ -36,18 +36,18 @@ public class RunExposureHealthOffline {
         HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
 
-        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(),config);
-        NoiseModel noiseModel = new NoiseModel(dataContainer,properties, SiloUtil.provideNewRandom(),config);
+//        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(),config);
+//        NoiseModel noiseModel = new NoiseModel(dataContainer,properties, SiloUtil.provideNewRandom(),config);
         SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
-        DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
+//        DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
 
-        airPollutantModel.endYear(endYear);
-        noiseModel.endYear(endYear);
+//        airPollutantModel.endYear(endYear);
+//        noiseModel.endYear(endYear);
         sportPAModelMEL.endYear(endYear);
         exposureModelMEL.endYear(endYear);
-        diseaseModelMEL.setup();
-        diseaseModelMEL.endYear(endYear);
+//        diseaseModelMEL.setup();
+//        diseaseModelMEL.endYear(endYear);
         dataContainer.endSimulation();
 
         logger.info("Finished SILO.");
