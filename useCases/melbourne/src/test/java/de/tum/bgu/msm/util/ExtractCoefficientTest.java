@@ -6,23 +6,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** This test uses the CSV file in the test directory.
- * Test for the ExtractCoefficient class that avoids using Mockito static mocking.
- * This test creates temporary property settings to point to the test CSV file.
+/**
+ * Test for the ExtractCoefficient class.
+ * This test uses the CSV file in the test directory.
  */
 class ExtractCoefficientTest {
 
     private static final String CSV_FILENAME = "mc_coefficients_nhbw.csv";
     private Path csvPath;
-    private Properties originalProps;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -46,38 +42,6 @@ class ExtractCoefficientTest {
     void tearDown() {
         // Disable test mode after tests
         ExtractCoefficient.setTestMode(false);
-    }
-
-    /**
-     * Create a temporary properties file for testing
-     */
-    private File createTempPropertiesFile() throws IOException {
-        File tempFile = File.createTempFile("test-mito", ".properties");
-        tempFile.deleteOnExit();
-
-        try (FileWriter writer = new FileWriter(tempFile)) {
-            writer.write("MC_COEFFICIENTS=" + csvPath.getParent().toString() + "/mc_coefficients\n");
-        }
-
-        // Set the system property to point to our temp file
-        System.setProperty("mito.properties", tempFile.getAbsolutePath());
-
-        return tempFile;
-    }
-
-    /**
-     * Utility method to invoke a static method using reflection
-     */
-    private Object invokeStaticMethod(Class<?> clazz, String methodName, Object... args)
-            throws Exception {
-        Method[] methods = clazz.getDeclaredMethods();
-        for (Method method : methods) {
-            if (method.getName().equals(methodName)) {
-                method.setAccessible(true);
-                return method.invoke(null, args);
-            }
-        }
-        return null;
     }
 
     @Test
