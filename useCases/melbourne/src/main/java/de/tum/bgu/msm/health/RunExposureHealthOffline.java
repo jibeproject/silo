@@ -53,7 +53,7 @@ public class RunExposureHealthOffline {
         exposureModelMEL.endYear(endYear);
         diseaseModelMEL.setup();
         diseaseModelMEL.endYear(endYear);
-        dataContainer.endSimulation();d
+        dataContainer.endSimulation();
 
         logger.info("Finished SILO.");
     }
