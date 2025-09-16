@@ -11,7 +11,6 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ExtractCoefficient {
@@ -94,74 +93,21 @@ public class ExtractCoefficient {
     private static Path getCoefficientsFilePath(Purpose purpose) {
         Path csvFilePath = null;
 
-        // Strategy 1: If in test mode, try to find the file in test locations first
         if (testMode) {
-            // First try src/test/java directory
             String testPath = "src/test/java/de/tum/bgu/msm/util/mc_coefficients_" + purpose.toString().toLowerCase() + ".csv";
             File testFile = new File(testPath);
             if (testFile.exists()) {
-                return testFile.toPath();
-            }
-
-            // Then try test/resources directory
-            testPath = "src/test/resources/mc_coefficients_" + purpose.toString().toLowerCase() + ".csv";
-            testFile = new File(testPath);
-            if (testFile.exists()) {
-                return testFile.toPath();
+                csvFilePath = testFile.toPath();
             }
         }
 
-        // Strategy 2: Try using Resources if available
         if (Resources.instance != null) {
             csvFilePath = Resources.instance.getModeChoiceCoefficients(purpose);
-            if (csvFilePath != null && new File(csvFilePath.toString()).exists()) {
-                return csvFilePath;
-            }
         }
 
-        // Strategy 3: Try using properties from MelbourneImplementationConfig
-        try {
-            Properties props = MelbourneImplementationConfig.getMitoBaseProperties();
-            String path = props.getProperty("MC_COEFFICIENTS", "input/mito/modeChoice/mc_coefficients");
-
-            if (path != null && !path.isEmpty()) {
-                File file = new File(String.format("%s_%s.csv", path, purpose.toString().toLowerCase()));
-                if (file.exists()) {
-                    return file.toPath();
-                }
-            }
-        } catch (Exception e) {
-            logger.warn("Could not load properties from MelbourneImplementationConfig: {}", e.getMessage());
-            // Continue to fallback strategies, don't exit
-        }
-
-        // Strategy 4: Default fallback paths
-        String[] fallbackPaths = {
-            String.format("input/mito/modeChoice/mc_coefficients_%s.csv", purpose.toString().toLowerCase()),
-            String.format("./mc_coefficients_%s.csv", purpose.toString().toLowerCase()),
-            String.format("mc_coefficients_%s.csv", purpose.toString().toLowerCase())
-        };
-
-        for (String path : fallbackPaths) {
-            File file = new File(path);
-            if (file.exists()) {
-                return file.toPath();
-            }
-        }
-
-        // Final attempt: Try to find the file in the current working directory or classpath
-        if (testMode) {
-            // For test mode, return a test location even if it doesn't exist yet
-            return new File("src/test/java/de/tum/bgu/msm/util/mc_coefficients_" + purpose.toString().toLowerCase() + ".csv").toPath();
-        } else {
-            // For production, return the default expected location
-            return new File("input/mito/modeChoice/mc_coefficients_" + purpose.toString().toLowerCase() + ".csv").toPath();
-        }
+        return csvFilePath;
     }
 
-    /**
-     * Load and parse the CSV file
-     */
     private static Map<String, Map<String, Double>> loadCsvData(Path csvFilePath) {
         if (csvFilePath == null || !new File(csvFilePath.toString()).exists()) {
             logger.error("CSV file does not exist: {}", csvFilePath);
@@ -184,7 +130,7 @@ public class ExtractCoefficient {
 
                 // Get all header names except the first one (which is the row key column)
                 for (String colName : parser.getHeaderNames()) {
-                    if (colName.equals(parser.getHeaderNames().get(0))) continue;
+                    if (colName.equals(parser.getHeaderNames().getFirst())) continue;
 
                     String value = record.get(colName);
                     if (value != null && !value.isEmpty()) {
