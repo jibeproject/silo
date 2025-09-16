@@ -1,7 +1,6 @@
 package de.tum.bgu.msm.util;
 
 import de.tum.bgu.msm.data.Purpose;
-import de.tum.bgu.msm.resources.Resources;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
@@ -11,6 +10,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ExtractCoefficient {
@@ -99,10 +99,16 @@ public class ExtractCoefficient {
             if (testFile.exists()) {
                 csvFilePath = testFile.toPath();
             }
-        }
+        } else {
+            Properties props = MelbourneImplementationConfig.getMitoBaseProperties();
+            String path = props.getProperty("MC_COEFFICIENTS", "input/mito/modeChoice/mc_coefficients");
 
-        if (Resources.instance != null) {
-            csvFilePath = Resources.instance.getModeChoiceCoefficients(purpose);
+            if (path != null && !path.isEmpty()) {
+                File file = new File(String.format("%s_%s.csv", path, purpose.toString().toLowerCase()));
+                if (file.exists()) {
+                    csvFilePath = file.toPath();
+                }
+            }
         }
 
         return csvFilePath;

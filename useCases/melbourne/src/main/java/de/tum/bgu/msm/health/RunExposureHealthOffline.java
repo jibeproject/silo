@@ -1,5 +1,7 @@
 package de.tum.bgu.msm.health;
 
+import de.tum.bgu.msm.health.airPollutant.AirPollutantModel;
+import de.tum.bgu.msm.health.noise.NoiseModel;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.resources.Resources;
 import de.tum.bgu.msm.utils.SiloUtil;
@@ -31,22 +33,27 @@ public class RunExposureHealthOffline {
             config = ConfigUtils.loadConfig(args[1]);
         }
         logger.info("Started SILO land use model for Greater Melbourne");
+        int endYear = properties.main.endYear;
         HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
 
         // setup
+        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(),config);
+        NoiseModel noiseModel = new NoiseModel(dataContainer,properties, SiloUtil.provideNewRandom(),config);
         SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         AccidentModelMEL accidentModel = new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
         DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
 
         // runs
-        sportPAModelMEL.endYear(2018);
-        accidentModel.endYear(2018);
-        exposureModelMEL.endYear(2018);
+        airPollutantModel.endYear(endYear);
+        noiseModel.endYear(endYear);
+        sportPAModelMEL.endYear(endYear);
+        accidentModel.endYear(endYear);
+        exposureModelMEL.endYear(endYear);
         diseaseModelMEL.setup();
-        diseaseModelMEL.endYear(2018);
-        dataContainer.endSimulation();
+        diseaseModelMEL.endYear(endYear);
+        dataContainer.endSimulation();d
 
         logger.info("Finished SILO.");
     }
