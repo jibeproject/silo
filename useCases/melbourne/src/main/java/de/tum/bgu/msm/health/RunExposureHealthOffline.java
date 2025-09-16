@@ -11,6 +11,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Implements SILO for the Greater Melbourne
@@ -23,27 +25,25 @@ public class RunExposureHealthOffline {
     private final static Logger logger = LogManager.getLogger(RunExposureHealthOffline.class);
 
     public static void main(String[] args) throws IOException {
-
+        logger.info("Started SILO offline health exposure model for Greater Melbourne");
         Properties properties = SiloUtil.siloInitialization(args[0]);
-
         Resources.initializeResources(properties.transportModel.mitoPropertiesPath);
-
+        Random seed = SiloUtil.provideNewRandom();
         Config config = null;
         if (args.length > 1 && args[1] != null) {
             config = ConfigUtils.loadConfig(args[1]);
         }
-        logger.info("Started SILO land use model for Greater Melbourne");
         int endYear = properties.main.endYear;
         HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
 
         // setup
-        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(),config);
-        NoiseModel noiseModel = new NoiseModel(dataContainer,properties, SiloUtil.provideNewRandom(),config);
-        SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
-        AccidentModelMEL accidentModel = new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
-        HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
-        DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
+        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, seed, config);
+        NoiseModel noiseModel = new NoiseModel(dataContainer,properties, seed,config);
+        SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, seed);
+        AccidentModelMEL accidentModel = new AccidentModelMEL(dataContainer, properties, seed);
+        HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, seed,config);
+        DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, seed);
 
         // runs
         airPollutantModel.endYear(endYear);
