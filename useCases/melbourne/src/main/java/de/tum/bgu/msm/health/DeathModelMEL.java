@@ -111,7 +111,7 @@ public class DeathModelMEL extends AbstractModel implements DeathModel {
     private void updateHealthDiseaseTracker(Person person) {
         Map<Integer, List<String>> healthDiseaseTracker = ((PersonHealth) person).getHealthDiseaseTracker();
         int previousYear = Collections.max(healthDiseaseTracker.keySet());
-        healthDiseaseTracker.put(previousYear+1, Arrays.asList("dead"));
-        ((DataContainerHealth)dataContainer).getHealthDiseaseTrackerRemovedPerson().put(person.getId(),healthDiseaseTracker);
+        healthDiseaseTracker.put(previousYear + 1, Arrays.asList("dead"));
+        ((DataContainerHealth) dataContainer).getHealthDiseaseTrackerRemovedPerson().put(person.getId(),healthDiseaseTracker);
     }
 }

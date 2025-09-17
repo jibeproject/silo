@@ -41,28 +41,39 @@ public class HealthExposuresReader {
             int posNoise = SiloUtil.findPositionInArray("exposure_normalised_noise_Lden", header);
             int posNdvi = SiloUtil.findPositionInArray("exposure_normalised_ndvi", header);
 
+            int posInjCar = SiloUtil.findPositionInArray("severeFatalInjuryCar", header);
+            int posInjBike = SiloUtil.findPositionInArray("severeFatalInjuryBike", header);
+            int posInjWalk = SiloUtil.findPositionInArray("severeFatalInjuryWalk", header);
 
             // read line
             while ((recString = in.readLine()) != null) {
                 recCount++;
                 String[] lineElements = recString.split(",");
                 PersonHealthMEL pp = (PersonHealthMEL) dataContainer.getHouseholdDataManager().getPersonFromId(Integer.parseInt(lineElements[posId]));
-                pp.updateWeeklyMarginalMetHours(Mode.walk, Float.parseFloat(lineElements[posMmetWalk]));
-                pp.updateWeeklyMarginalMetHours(Mode.bicycle, Float.parseFloat(lineElements[posMmetCycle]));
-                pp.setWeeklyMarginalMetHoursSport(Float.parseFloat(lineElements[posMmetSport]));
+                if(pp!=null) {
+                    pp.updateWeeklyMarginalMetHours(Mode.walk, Float.parseFloat(lineElements[posMmetWalk]));
+                    pp.updateWeeklyMarginalMetHours(Mode.bicycle, Float.parseFloat(lineElements[posMmetCycle]));
+                    pp.setWeeklyMarginalMetHoursSport(Float.parseFloat(lineElements[posMmetSport]));
 
-                Map<String, Float> exposureMap = new HashMap<>();
-                exposureMap.put("pm2.5", Float.parseFloat(lineElements[posPM2_5]));
-                exposureMap.put("no2", Float.parseFloat(lineElements[posNO2]));
-                pp.setWeeklyExposureByPollutantNormalised(exposureMap);
-                pp.setWeeklyNoiseExposuresNormalised(Float.parseFloat(lineElements[posNoise]));
-                pp.setWeeklyGreenExposuresNormalised(Float.parseFloat(lineElements[posNdvi]));
+                    Map<String, Double> injuryMap = new HashMap<>();
+                    injuryMap.put("severeFatalInjuryCar", Double.parseDouble(lineElements[posInjCar]));
+                    injuryMap.put("severeFatalInjuryBike", Double.parseDouble(lineElements[posInjBike]));
+                    injuryMap.put("severeFatalInjuryWalk", Double.parseDouble(lineElements[posInjWalk]));
+                    pp.updateWeeklyAccidentRisks(injuryMap);
+
+                    Map<String, Float> exposureMap = new HashMap<>();
+                    exposureMap.put("pm2.5", Float.parseFloat(lineElements[posPM2_5]));
+                    exposureMap.put("no2", Float.parseFloat(lineElements[posNO2]));
+                    pp.setWeeklyExposureByPollutantNormalised(exposureMap);
+                    pp.setWeeklyNoiseExposuresNormalised(Float.parseFloat(lineElements[posNoise]));
+                    pp.setWeeklyGreenExposuresNormalised(Float.parseFloat(lineElements[posNdvi]));
+                }
             }
         } catch (IOException e) {
-            logger.fatal("IO Exception caught reading person health exposure file: " + path);
-            logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
+            logger.fatal("IO Exception caught reading person health exposure file: {}", path);
+            logger.fatal("recCount = {}, recString = <{}>", recCount, recString);
         }
-        logger.info("Finished reading " + recCount + " persons with exposure.");
+        logger.info("Finished reading {} persons with exposure.", recCount);
         return persons;
     }
 }

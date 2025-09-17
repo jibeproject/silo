@@ -9,6 +9,8 @@ import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.disease.HealthExposures;
 import de.tum.bgu.msm.models.demography.death.DeathStrategy;
 
+import java.util.*;
+
 public class DeathStrategyMEL implements DeathStrategy {
 
     private final HealthDataContainerImpl dataContainer;
@@ -25,11 +27,22 @@ public class DeathStrategyMEL implements DeathStrategy {
         Gender personSex = person.getGender();
 
         if (personAge < 0){
-            throw new RuntimeException("Undefined negative person age!"+personAge);
+            throw new RuntimeException("Undefined negative person age: " + personAge);
         }
 
         //cap age at 100, over 100 all cause mortality prob = 1
         if (personAge >= 100){
+            return 1.;
+        }
+
+        // check killed by injury
+        Set<Diseases> killedInAccident = Set.of(
+                Diseases.dead_car,
+                Diseases.dead_bike,
+                Diseases.dead_walk
+        );
+
+        if (!Collections.disjoint(((PersonHealth) person).getCurrentDisease(), killedInAccident)) {
             return 1.;
         }
 
@@ -39,6 +52,17 @@ public class DeathStrategyMEL implements DeathStrategy {
 
         double alpha = dataContainer.getHealthTransitionData().get(Diseases.all_cause_mortality).get(compositeKey);
 
+
+        /*calculate odds: odd_1 = transition_raw/(1 - transition_raw). transition_raw = 1 - exp-(transition_raw-this is the data)
+        multiply by relative risks: odd_2 = odd_1 * rr
+        translate to probability = probability = odd_2/(1+odd_2)
+
+         */
+
+
+        //calculation of probabilities for mortality with first adjustment using rates*rr exposures/PA and then
+        // adjusting probabilities (previous rate converted to probability) to odds ratios and multiplied by teh
+        // disease rr and back to prob. I understand this was not done this way before.
         //no rr adjustment for age under 18
         if(personAge < 18){
             return alpha;
@@ -46,10 +70,66 @@ public class DeathStrategyMEL implements DeathStrategy {
 
         if(adjustByRelativeRisk){
             for(HealthExposures healthExposures : ((PersonHealth)person).getRelativeRisksByDisease().keySet()){
-                alpha *=  ((PersonHealth)person).getRelativeRisksByDisease().get(healthExposures).get(Diseases.all_cause_mortality);
+                alpha *= ((PersonHealth)person).getRelativeRisksByDisease().get(healthExposures).get(Diseases.all_cause_mortality);
             }
         }
 
-        return alpha;
+
+
+        //alpha = alpha / (1 - alpha);
+
+        // risk factors
+        Set<Diseases> currentDiseases = new HashSet<>(((PersonHealth) person).getCurrentDisease());
+        Set<Diseases> cancers = Set.of(
+                Diseases.breast_cancer,
+                Diseases.endometrial_cancer,
+                Diseases.colon_cancer,
+                Diseases.bladder_cancer,
+                //Diseases.esophageal_cancer,
+                //Diseases.gastric_cardia_cancer,
+                Diseases.head_neck_cancer,
+                //Diseases.liver_cancer,
+                Diseases.lung_cancer,
+                Diseases.rectum_cancer
+        );
+        Set<Diseases> injuries = Set.of(
+                Diseases.severely_injured_car,
+                Diseases.severely_injured_bike,
+                Diseases.severely_injured_walk
+        );
+
+        if (Collections.disjoint(currentDiseases, injuries)) {
+
+            if (currentDiseases.size() == 1) {
+                alpha *= 1.23;
+            }
+            if (currentDiseases.size() == 2) {
+                alpha *= 1.62;
+            }
+            if (currentDiseases.size() == 3) {
+                alpha *= 2.09;
+            }
+            if (currentDiseases.size() == 4) {
+                alpha *= 2.77;
+            }
+            if (currentDiseases.size() == 5) {
+                alpha *= 3.46;
+            }
+            if (currentDiseases.size() > 5) {
+                alpha *= 5.14;
+            }
+        }
+
+        if (!Collections.disjoint(currentDiseases, injuries)) {
+            if (person.getGender().equals(Gender.MALE)) {
+                alpha *= 1.71;
+            } else {
+                alpha *= 1.74;
+            }
+        }
+
+        return  (1 - Math.exp(-alpha));
+
+        //return alpha/(1+alpha);
     }
 }
