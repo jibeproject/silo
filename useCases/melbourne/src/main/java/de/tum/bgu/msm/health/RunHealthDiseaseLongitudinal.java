@@ -23,14 +23,13 @@ public class RunHealthDiseaseLongitudinal {
     private final static Logger logger = LogManager.getLogger(RunHealthDiseaseLongitudinal.class);
 
     public static void main(String[] args) throws IOException {
-
+        logger.info("Started SILO longitudinal model for the Greater Melbourne");
+        logger.info("Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
-
         Config config = null;
         if (args.length > 1 && args[1] != null) {
             config = ConfigUtils.loadConfig(args[1]);
         }
-        logger.info("Started SILO land use model for the Greater Melbourne");
         HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
 

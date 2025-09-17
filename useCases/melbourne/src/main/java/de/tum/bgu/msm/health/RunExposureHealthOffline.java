@@ -25,6 +25,7 @@ public class RunExposureHealthOffline {
 
     public static void main(String[] args) throws IOException {
         logger.info("Started SILO offline health exposure model for Greater Melbourne");
+        logger.info("Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
 
         Resources.initializeResources(properties.transportModel.mitoPropertiesPath);

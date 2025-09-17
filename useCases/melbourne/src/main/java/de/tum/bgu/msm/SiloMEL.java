@@ -30,6 +30,7 @@ public class SiloMEL {
 
     public static void main(String[] args) throws IOException {
         logger.info("Started SILO land use model for the Great Melbourne region");
+        logger.info("Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
         Config config = null;
         if (args.length > 1 && args[1] != null) {
