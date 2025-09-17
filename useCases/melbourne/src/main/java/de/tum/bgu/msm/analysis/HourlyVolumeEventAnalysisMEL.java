@@ -102,7 +102,9 @@ public class HourlyVolumeEventAnalysisMEL {
                 eventsManager.addHandler(handler);
                 EventsUtils.readEvents(eventsManager, eventPath);
                 writeHourlyVolumes(network, handler, outputPath, mode.header, mode.scaleFactor, mode.volumeTypes);
+                logger.info("Hourly volume by {} written to {}", mode.subfolder, outputPath);
             }
         }
+        logger.info("Hourly volume analysis completed.");
     }
 }
