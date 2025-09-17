@@ -23,7 +23,7 @@ public class RunHealthDiseaseLongitudinal {
     private final static Logger logger = LogManager.getLogger(RunHealthDiseaseLongitudinal.class);
 
     public static void main(String[] args) throws IOException {
-        logger.info("Started SILO longitudinal model for the Greater Melbourne");
+        logger.info("Started SILO longitudinal model for Greater Melbourne");
         logger.info("Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
         Config config = null;
