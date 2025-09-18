@@ -17,7 +17,9 @@ import java.nio.file.Paths;
 /**
  * Implements SILO for the Greater Melbourne
  *
- * @author Qin Zhang*/
+ * @author Qin Zhang
+ * @author Carl Higgs
+ **/
 
 
 public class RunExposureHealthOffline {

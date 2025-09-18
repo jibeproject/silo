@@ -12,7 +12,9 @@ import java.io.IOException;
 /**
  * Implements SILO for the Greater Melbourne
  *
- * @author Qin Zhang*/
+ * @author Qin Zhang
+ * @author Carl Higgs
+ **/
 
 
 public class RunHomeBasedExposureOffline {
