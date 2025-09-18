@@ -47,12 +47,7 @@ public class RunExposureHealthOffline {
         final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
         String day = "thursday";
         String airPollutionFileCheckPath = outputDirectory + "linkConcentration_" + day + ".csv";
-        String noiseFileCheckPath = outputDirectory
-                + properties.realEstate.dwellingsFinalFileName
-                + "_noise_"
-                + day
-                + endYear
-                + ".csv";
+        String noiseFileCheckPath = outputDirectory + "/matsim/" + endYear + "/" + day + "/car/noise-analysis/receiverPoints/receiverPoints.csv";
         if (OutputFileExists(airPollutionFileCheckPath)) {
             logger.warn("Air pollution output exists ({}). Air pollution modelling will be skipped. Please delete existing results to re-run.",airPollutionFileCheckPath);
         } else {
