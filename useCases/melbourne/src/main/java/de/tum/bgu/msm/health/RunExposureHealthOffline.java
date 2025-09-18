@@ -11,7 +11,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
-import java.util.Random;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 /**
  * Implements SILO for the Greater Melbourne
@@ -39,16 +40,39 @@ public class RunExposureHealthOffline {
         DataBuilderHealth.read(properties, dataContainer, config);
 
         // setup
-        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
-        NoiseModel noiseModel = new NoiseModel(dataContainer,properties, SiloUtil.provideNewRandom(),config);
+        AirPollutantModel airPollutantModel = null;
+        NoiseModel noiseModel = null;
+        final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
+        String day = "thursday";
+        String airPollutionFileCheckPath = outputDirectory + "linkConcentration_" + day + ".csv";
+        String noiseFileCheckPath = outputDirectory
+                + properties.realEstate.dwellingsFinalFileName
+                + "_noise_"
+                + day
+                + endYear
+                + ".csv";
+        if (OutputFileExists(airPollutionFileCheckPath)) {
+            logger.warn("Air pollution output exists ({}). Air pollution modelling will be skipped. Please delete existing results to re-run.",airPollutionFileCheckPath);
+        } else {
+            airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
+        }
+        if (OutputFileExists(noiseFileCheckPath)) {
+            logger.warn("Noise output exists ({}). Noise modelling will be skipped. Please delete existing results to re-run.",noiseFileCheckPath);
+        } else {
+            noiseModel = new NoiseModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
+        }
         SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         AccidentModelMEL accidentModel = new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
         DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
 
         // runs
-        airPollutantModel.endYear(endYear);
-        noiseModel.endYear(endYear);
+        if (!OutputFileExists(airPollutionFileCheckPath)) {
+            airPollutantModel.endYear(endYear);
+        }
+        if (!OutputFileExists(noiseFileCheckPath)) {
+            noiseModel.endYear(endYear);
+        }
         sportPAModelMEL.endYear(endYear);
         accidentModel.endYear(endYear);
         exposureModelMEL.endYear(endYear);
@@ -57,5 +81,9 @@ public class RunExposureHealthOffline {
         dataContainer.endSimulation();
 
         logger.info("Finished SILO.");
+    }
+
+    public static boolean OutputFileExists(String path) {
+        return Files.exists(Paths.get(path));
     }
 }
