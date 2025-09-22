@@ -16,6 +16,7 @@ import de.tum.bgu.msm.data.job.*;
 import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.data.travelTimes.TravelTimes;
 import de.tum.bgu.msm.health.data.LinkInfo;
+import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.io.DefaultSpeedReader;
 import de.tum.bgu.msm.health.io.DoseResponseLookupReader;
 import de.tum.bgu.msm.health.io.InjuryRRTableReader;
@@ -37,6 +38,7 @@ import org.matsim.core.network.NetworkUtils;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static de.tum.bgu.msm.util.CsvWriter.writeTableDataSetToCSV;
@@ -159,11 +161,22 @@ public class DataBuilderHealth {
         DoseResponseLookupReader doseResponseReader = new DoseResponseLookupReader();
         doseResponseReader.readData(properties.main.baseDirectory + properties.healthData.basePath);
         dataContainer.setDoseResponseData(doseResponseReader.getDoseResponseData());
-        dataContainer.setHealthPrevalenceData(new PrevalenceDataReader().readData(properties.main.baseDirectory + properties.healthData.prevalenceDataFile));
+        dataContainer.setHealthPrevalenceData(getHealthPrevalenceData(properties));
         dataContainer.setHealthInjuryRRdata(new InjuryRRTableReader().readData(properties.main.baseDirectory + properties.healthData.healthInjuryRRDataFile));
 
         MicroDataScaler microDataScaler = new MicroDataScaler(dataContainer, properties);
         microDataScaler.scale();
+    }
+
+    private static Map<Integer, List<Diseases>> getHealthPrevalenceData(Properties properties) {
+        String prevalenceDataPath = properties.main.baseDirectory + properties.healthData.prevalenceDataFile;
+        if (!new File(prevalenceDataPath).exists()) {
+            logger.warn("No baseline disease prevalence data file found at {}. Simulation will be run with assumption of no baseline disease.", prevalenceDataPath);
+            return new HashMap<>();
+        } else{
+            logger.info("Reading health prevalence data from {}", prevalenceDataPath);
+            return new PrevalenceDataReader().readData(prevalenceDataPath);
+        }
     }
 
 
