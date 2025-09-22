@@ -1553,7 +1553,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             JobMEL job = (JobMEL)dataContainer.getJobDataManager().getJobFromId(tripDestinationMicroId);
             if(job != null) {
                 if("poi".equals(job.getMicrolocationType())) {
-                    return "poi" + job.getMicroBuildingId();
+                    return "job" + job.getMicroBuildingId();
                 }else if("zoneCentroid".equals(job.getMicrolocationType())) {
                     return "zone" + job.getMicroBuildingId();
                 }

@@ -5,6 +5,8 @@ import de.tum.bgu.msm.data.job.Job;
 import de.tum.bgu.msm.data.job.JobDataManager;
 import de.tum.bgu.msm.data.job.JobFactory;
 import de.tum.bgu.msm.data.job.JobMEL;
+import de.tum.bgu.msm.health.data.ActivityLocation;
+import de.tum.bgu.msm.health.data.DataContainerHealth;
 import de.tum.bgu.msm.io.input.JobReader;
 import de.tum.bgu.msm.util.parseMEL;
 import de.tum.bgu.msm.utils.SiloUtil;
@@ -68,6 +70,7 @@ public class JobReaderMEL implements JobReader {
                 int id = parseMEL.intParse(lineElements[posId]);
                 int zoneId = parseMEL.zoneParse(lineElements[posZone]);
                 int worker = parseMEL.intParse(lineElements[posWorker]);
+                int microBuildingId = -1;
                 String type = parseMEL.stringParse(lineElements[posType]);
 
                 Coordinate coordinate = null;
@@ -86,14 +89,18 @@ public class JobReaderMEL implements JobReader {
                 if(posMicrolocationType>=0){
                     ((JobMEL)jj).setMicrolocationType(lineElements[posMicrolocationType]);
                 }else {
-                    ((JobMEL)jj).setMicrolocationType("null");
+                    ((JobMEL)jj).setMicrolocationType("zone");
                 }
 
                 if(posMicroBuildingId>=0){
-                    ((JobMEL)jj).setMicroBuildingId(parseMEL.stringToLongId(lineElements[posMicroBuildingId]));
+                    microBuildingId = parseMEL.stringToIntId(lineElements[posMicroBuildingId]);
+                    ((JobMEL)jj).setMicroBuildingId(parseMEL.stringToIntId(lineElements[posMicroBuildingId]));
                 }else {
                     ((JobMEL)jj).setMicroBuildingId(-1);
                 }
+
+                ActivityLocation activityLocation = new ActivityLocation(("job"+microBuildingId),coordinate);
+                ((DataContainerHealth) dataContainer).getActivityLocations().put(("job"+microBuildingId),activityLocation);
 
 
                 jobData.addJob(jj);
