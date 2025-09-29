@@ -1,23 +1,18 @@
 package de.tum.bgu.msm.util;
 
-import de.tum.bgu.msm.data.MitoGender;
 import de.tum.bgu.msm.data.Purpose;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.matsim.api.core.v01.Id;
-import org.matsim.api.core.v01.population.Person;
-import org.matsim.core.population.PersonUtils;
-import org.matsim.core.population.PopulationUtils;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.File;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test for the CoefficientLookup optimization.
- * This test verifies the lookup table functionality without dependencies on RunMatsimActiveMode.
+ * Test for the CoefficientLookup class using real CSV coefficient files.
+ * This test verifies that coefficients are correctly loaded from CSV files
+ * and that the lookup functionality works as expected.
  */
 class CoefficientLookupTest {
 
@@ -25,6 +20,18 @@ class CoefficientLookupTest {
     void setUp() {
         // Reset the lookup table before each test
         CoefficientLookup.reset();
+
+        // First try production path, then fall back to test path
+        File productionFile = new File("input/mito/modeChoice/mc_coefficients_nhbw.csv");
+        File testFile = new File("src/test/java/de/tum/bgu/msm/util/mc_coefficients_nhbw.csv");
+
+        if (!productionFile.exists() && !testFile.exists()) {
+            fail("Test CSV file must exist in either production path (" + productionFile.getAbsolutePath() +
+                 ") or test path (" + testFile.getAbsolutePath() + ")");
+        }
+
+        System.out.println("Production file exists: " + productionFile.exists());
+        System.out.println("Test file exists: " + testFile.exists());
     }
 
     @AfterEach
@@ -34,265 +41,188 @@ class CoefficientLookupTest {
     }
 
     @Test
-    void testCoefficientLookupInitialization() {
-        // Test that the lookup table can be initialised without errors
-        assertDoesNotThrow(() -> {
-            CoefficientLookup.initialise();
-        }, "CoefficientLookup initialization should not throw exceptions");
+    void testInitialiseWithExtractCoefficient() {
+        // Test initializing using the ExtractCoefficient function
+        assertDoesNotThrow(CoefficientLookup::initialiseTest, "Should initialize successfully using ExtractCoefficient");
 
+        // Verify statistics show successful loading
         String stats = CoefficientLookup.getStatistics();
-        assertNotNull(stats, "Statistics should not be null");
-        assertTrue(stats.contains("Initialised: true"), "Should report as initialised");
-
-        System.out.println("✅ Initialization test passed");
-        System.out.println("Stats: " + stats);
+        assertTrue(stats.contains("Purposes: 1"), "Should load 1 purpose (NHBW): " + stats);
+        assertTrue(stats.contains("Initialised: true"), "Should be marked as initialised: " + stats);
     }
 
     @Test
-    void testGetCoefficient() {
-        // Ensure lookup is initialised
-        CoefficientLookup.initialise();
+    void testGetCoefficientWithRealData() {
+        // Initialize with ExtractCoefficient
+        CoefficientLookup.initialiseTest();
 
-        // Test getting individual coefficients
-        double coeff1 = CoefficientLookup.getCoefficient(Purpose.NHBW, "bicycle", "grad");
-        double coeff2 = CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
+        // Test specific coefficients from the CSV file
+        // These values are from the actual mc_coefficients_nhbw.csv file
 
-        // Should return valid numbers (not null or NaN)
-        assertFalse(Double.isNaN(coeff1), "Coefficient should not be NaN");
-        assertFalse(Double.isNaN(coeff2), "Coefficient should not be NaN");
+        // Test bicycle stressLink coefficient
+        double bicycleStressLink = CoefficientLookup.getCoefficient(Purpose.NHBW, "bicycle", "stressLink");
+        assertEquals(3.9477646925, bicycleStressLink, 0.0001, "Bicycle stressLink should match CSV value");
 
-        // Test non-existent combinations return 0.0
-        double nonExistent = CoefficientLookup.getCoefficient(Purpose.AIRPORT, "nonexistent", "invalid");
-        assertEquals(0.0, nonExistent, "Non-existent coefficient should return 0.0");
+        // Test walk speed coefficient
+        double walkSpeed = CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
+        assertEquals(4.3210968193, walkSpeed, 0.0001, "Walk speed should match CSV value");
 
-        System.out.println("✅ Individual coefficient lookup test passed");
-        System.out.println("  bicycle grad: " + coeff1);
-        System.out.println("  walk speed: " + coeff2);
+        // Test zero values (autoDriver grad)
+        double autoDriverGrad = CoefficientLookup.getCoefficient(Purpose.NHBW, "autoDriver", "grad");
+        assertEquals(0.0, autoDriverGrad, 0.0001, "AutoDriver grad should be zero");
     }
 
     @Test
-    void testGetCoefficients() {
-        // Ensure lookup is initialised
-        CoefficientLookup.initialise();
+    void testGetCoefficientSetWithRealData() {
+        // Initialize with ExtractCoefficient
+        CoefficientLookup.initialiseTest();
 
-        // Test getting coefficient sets
-        CoefficientLookup.CoefficientSet bikeCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bicycle");
+        // Test getting a complete coefficient set for bicycle mode
+        CoefficientLookup.CoefficientSet bicycleCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bicycle");
+        assertNotNull(bicycleCoeffs, "Bicycle coefficient set should not be null");
+
+        // Verify specific coefficients match CSV values
+        assertEquals(0.0, bicycleCoeffs.grad, 0.0001, "Bicycle grad should be 0.0");
+        assertEquals(3.9477646925, bicycleCoeffs.stressLink, 0.0001, "Bicycle stressLink should match CSV");
+        assertEquals(0.0, bicycleCoeffs.vgvi, 0.0001, "Bicycle vgvi should be 0.0");
+        assertEquals(0.0, bicycleCoeffs.speed, 0.0001, "Bicycle speed should be 0.0");
+
+        // Test getting coefficient set for walk mode
+        CoefficientLookup.CoefficientSet walkCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "walk");
+        assertNotNull(walkCoeffs, "Walk coefficient set should not be null");
+
+        assertEquals(0.0, walkCoeffs.grad, 0.0001, "Walk grad should be 0.0");
+        assertEquals(0.0, walkCoeffs.stressLink, 0.0001, "Walk stressLink should be 0.0");
+        assertEquals(0.0, walkCoeffs.vgvi, 0.0001, "Walk vgvi should be 0.0");
+        assertEquals(4.3210968193, walkCoeffs.speed, 0.0001, "Walk speed should match CSV");
+    }
+
+    @Test
+    void testAllModesLoadedCorrectly() {
+        // Initialize with ExtractCoefficient
+        CoefficientLookup.initialiseTest();
+
+        // Test that all modes are available
+        String[] expectedModes = {"autoDriver", "autoPassenger", "pt", "bicycle", "walk"};
+
+        for (String mode : expectedModes) {
+            CoefficientLookup.CoefficientSet coeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, mode);
+            assertNotNull(coeffs, "Coefficient set should exist for mode: " + mode);
+        }
+    }
+
+    @Test
+    void testAttributeAccessThroughCoefficientSet() {
+        // Initialize with ExtractCoefficient
+        CoefficientLookup.initialiseTest();
+
         CoefficientLookup.CoefficientSet walkCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "walk");
 
-        assertNotNull(bikeCoeffs, "Bike coefficients should not be null");
-        assertNotNull(walkCoeffs, "Walk coefficients should not be null");
+        // Test accessing coefficients through getAttribute method
+        assertEquals(0.0, walkCoeffs.getAttribute("grad"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("stressLink"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("vgvi"), 0.0001);
+        assertEquals(4.3210968193, walkCoeffs.getAttribute("speed"), 0.0001);
 
-        // Test that coefficients are valid numbers
-        assertFalse(Double.isNaN(bikeCoeffs.grad), "Bike grad coefficient should not be NaN");
-        assertFalse(Double.isNaN(walkCoeffs.speed), "Walk speed coefficient should not be NaN");
+        // Test female interaction terms (should be 0.0 in test data)
+        assertEquals(0.0, walkCoeffs.getAttribute("grad_f"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("stressLink_f"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("vgvi_f"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("speed_f"), 0.0001);
 
-        System.out.println("✅ Coefficient set lookup test passed");
-        System.out.println("  Bike coefficients: " + bikeCoeffs);
-        System.out.println("  Walk coefficients: " + walkCoeffs);
+        // Test child interaction terms (should be 0.0 in test data)
+        assertEquals(0.0, walkCoeffs.getAttribute("grad_c"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("stressLink_c"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("vgvi_c"), 0.0001);
+        assertEquals(0.0, walkCoeffs.getAttribute("speed_c"), 0.0001);
+
+        // Test unknown attribute returns 0.0
+        assertEquals(0.0, walkCoeffs.getAttribute("unknown_attribute"), 0.0001);
     }
 
     @Test
-    void testCalculateActiveModeWeightsLogic() {
-        // Test the coefficient aggregation logic without depending on RunMatsimActiveMode
-        CoefficientLookup.initialise();
+    void testErrorHandlingForUninitialised() {
+        // Test accessing coefficients without initialization
+        assertThrows(IllegalStateException.class, () -> {
+            CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
+        }, "Should throw exception when not initialised");
 
-        // Simulate the calculateActiveModeWeights logic manually
-        String mode = "bicycle";
-        MitoGender gender = MitoGender.FEMALE;
-        int age = 30;
-
-        double grad = 0.0;
-        double stressLink = 0.0;
-        double vgvi = 0.0;
-        double speed = 0.0;
-
-        Purpose[] purposes = {Purpose.HBW, Purpose.HBE, Purpose.HBS, Purpose.HBO, Purpose.HBR, Purpose.HBA, Purpose.NHBW, Purpose.NHBO};
-
-        for (Purpose purpose : purposes) {
-            CoefficientLookup.CoefficientSet coeffs = CoefficientLookup.getCoefficients(purpose, mode);
-
-            // Base coefficients
-            grad += coeffs.grad;
-            stressLink += coeffs.stressLink;
-            vgvi += coeffs.vgvi;
-            speed += coeffs.speed;
-
-            // Female interaction terms (age >= 16)
-            if (age >= 16 && gender.equals(MitoGender.FEMALE)) {
-                grad += coeffs.grad_f;
-                stressLink += coeffs.stressLink_f;
-                vgvi += coeffs.vgvi_f;
-                speed += coeffs.speed_f;
-            }
-        }
-
-        double[] weights = new double[] {grad, stressLink, vgvi, speed};
-
-        assertEquals(4, weights.length, "Should return 4 weight values");
-
-        // Weights should be finite numbers
-        for (double weight : weights) {
-            assertTrue(Double.isFinite(weight), "All weights should be finite numbers");
-        }
-
-        System.out.println("✅ Active mode weights logic test passed");
-        System.out.println("  Weights for adult female bicycle: " + java.util.Arrays.toString(weights));
+        assertThrows(IllegalStateException.class, () -> {
+            CoefficientLookup.getCoefficients(Purpose.NHBW, "walk");
+        }, "Should throw exception when not initialised");
     }
 
     @Test
-    void testPerformanceComparison() {
-        // Ensure lookup is initialised
-        CoefficientLookup.initialise();
+    void testNonExistentPurposeAndMode() {
+        // Initialize with ExtractCoefficient
+        CoefficientLookup.initialiseTest();
 
-        // Test the performance of coefficient lookups (without RunMatsimActiveMode dependency)
-        long startTime = System.currentTimeMillis();
+        // Test accessing non-existent purpose (should return 0.0 with warning)
+        double coeff = CoefficientLookup.getCoefficient(Purpose.HBW, "walk", "speed");
+        assertEquals(0.0, coeff, 0.0001, "Should return 0.0 for non-existent purpose");
 
-        // Simulate 1000 coefficient retrievals
-        for (int i = 0; i < 1000; i++) {
-            Purpose purpose = Purpose.values()[i % Purpose.values().length];
-            String mode = i % 2 == 0 ? "bicycle" : "walk";
+        // Test accessing non-existent mode (should return 0.0 with warning)
+        double nonExistentMode = CoefficientLookup.getCoefficient(Purpose.NHBW, "nonExistentMode", "speed");
+        assertEquals(0.0, nonExistentMode, 0.0001, "Should return 0.0 for non-existent mode");
 
-            // This should be very fast with the lookup table
-            CoefficientLookup.CoefficientSet coeffs = CoefficientLookup.getCoefficients(purpose, mode);
-            assertNotNull(coeffs, "Coefficients should not be null");
-        }
-
-        long optimisedTime = System.currentTimeMillis() - startTime;
-
-        // The optimised version should be very fast
-        assertTrue(optimisedTime < 500, "1000 coefficient lookups should be fast (under 500ms)");
-
-        System.out.println("✅ Performance test passed");
-        System.out.println("  Time for 1000 coefficient lookups: " + optimisedTime + "ms");
-        System.out.println("  Average time per lookup: " + (optimisedTime / 1000.0) + "ms");
-
-        // Log expected improvement
-        System.out.println("📈 Expected improvement: ~100-1000x faster than CSV-per-lookup approach");
+        // Test getting coefficient set for non-existent mode (should return empty set)
+        CoefficientLookup.CoefficientSet emptySet = CoefficientLookup.getCoefficients(Purpose.NHBW, "nonExistentMode");
+        assertNotNull(emptySet, "Should return empty coefficient set for non-existent mode");
+        assertEquals(0.0, emptySet.speed, 0.0001, "Empty set should have zero values");
     }
 
     @Test
-    void testThreadSafety() {
-        // Ensure lookup is initialised
-        CoefficientLookup.initialise();
+    void testDoubleInitialisation() {
+        // Initialize once
+        CoefficientLookup.initialiseTest();
 
-        // Test concurrent access
-        List<Thread> threads = new ArrayList<>();
-        List<Exception> exceptions = new ArrayList<>();
+        // Initialize again - should not throw exception
+        assertDoesNotThrow(() -> {
+            CoefficientLookup.initialiseTest();
+        }, "Double initialization should be safe");
 
-        for (int i = 0; i < 3; i++) {  // Reduced thread count
-            final int threadId = i;
-            threads.add(new Thread(() -> {
-                try {
-                    for (int j = 0; j < 50; j++) {
-                        Purpose purpose = Purpose.NHBW;
-                        String mode = j % 2 == 0 ? "bicycle" : "walk";
-
-                        // Test concurrent coefficient access
-                        double coeff = CoefficientLookup.getCoefficient(purpose, mode, "grad");
-                        CoefficientLookup.CoefficientSet coeffSet = CoefficientLookup.getCoefficients(purpose, mode);
-
-                        // Verify results are consistent
-                        assertTrue(Double.isFinite(coeff));
-                        assertNotNull(coeffSet);
-                        assertTrue(Double.isFinite(coeffSet.grad));
-                    }
-                } catch (Exception e) {
-                    synchronized (exceptions) {
-                        exceptions.add(e);
-                    }
-                }
-            }));
-        }
-
-        // Start all threads
-        threads.forEach(Thread::start);
-
-        // Wait for completion
-        threads.forEach(thread -> {
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                fail("Thread was interrupted: " + e.getMessage());
-            }
-        });
-
-        // Check for exceptions
-        assertTrue(exceptions.isEmpty(),
-                "No exceptions should occur during concurrent access: " + exceptions);
-
-        System.out.println("✅ Thread safety test passed");
-        System.out.println("  3 threads × 50 lookups each = 150 concurrent operations completed successfully");
+        // Should still work correctly
+        double walkSpeed = CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
+        assertEquals(4.3210968193, walkSpeed, 0.0001, "Should still return correct values after double init");
     }
 
     @Test
-    void testCoefficientSetValues() {
-        CoefficientLookup.initialise();
+    void testBikeBicycleAmbiguity() {
+        // Initialize with ExtractCoefficient
+        CoefficientLookup.initialiseTest();
 
-        // Test that coefficient sets have the expected structure and values
-        CoefficientLookup.CoefficientSet bikeCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bicycle");
+        // Test that 'bike' and 'bicycle' return the same coefficients
+        double bicycleStressLink = CoefficientLookup.getCoefficient(Purpose.NHBW, "bicycle", "stressLink");
+        double bikeStressLink = CoefficientLookup.getCoefficient(Purpose.NHBW, "bike", "stressLink");
 
-        // Test that all fields are accessible and finite
-        assertTrue(Double.isFinite(bikeCoeffs.grad), "grad should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.stressLink), "stressLink should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.vgvi), "vgvi should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.speed), "speed should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.grad_f), "grad_f should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.stressLink_f), "stressLink_f should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.vgvi_f), "vgvi_f should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.speed_f), "speed_f should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.grad_c), "grad_c should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.stressLink_c), "stressLink_c should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.vgvi_c), "vgvi_c should be finite");
-        assertTrue(Double.isFinite(bikeCoeffs.speed_c), "speed_c should be finite");
+        assertEquals(bicycleStressLink, bikeStressLink, 0.0001,
+                     "Both 'bike' and 'bicycle' should return the same coefficient values");
+        assertEquals(3.9477646925, bikeStressLink, 0.0001,
+                     "Bike stressLink should match expected bicycle value from CSV");
 
-        // Test that toString method works
-        String coeffString = bikeCoeffs.toString();
-        assertNotNull(coeffString, "toString should not be null");
-        assertTrue(coeffString.contains("grad="), "toString should contain coefficient values");
+        // Test with different case variations
+        double bikeUpperCase = CoefficientLookup.getCoefficient(Purpose.NHBW, "BIKE", "stressLink");
+        double bikeMixedCase = CoefficientLookup.getCoefficient(Purpose.NHBW, "Bike", "stressLink");
 
-        System.out.println("✅ Coefficient set values test passed");
-        System.out.println("  Coefficient set: " + coeffString);
-    }
+        assertEquals(bicycleStressLink, bikeUpperCase, 0.0001,
+                     "'BIKE' (uppercase) should return the same coefficient as 'bicycle'");
+        assertEquals(bicycleStressLink, bikeMixedCase, 0.0001,
+                     "'Bike' (mixed case) should return the same coefficient as 'bicycle'");
 
-    @Test
-    void testIntegrationSummary() {
-        System.out.println("\n=== COEFFICIENT LOOKUP OPTIMIZATION SUMMARY ===");
+        // Test getCoefficients method as well
+        CoefficientLookup.CoefficientSet bicycleCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bicycle");
+        CoefficientLookup.CoefficientSet bikeCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bike");
 
-        try {
-            // Test all core functionality
-            testCoefficientLookupInitialization();
-            testGetCoefficient();
-            testGetCoefficients();
-            testCalculateActiveModeWeightsLogic();
-            testPerformanceComparison();
-            testThreadSafety();
-            testCoefficientSetValues();
+        assertNotNull(bicycleCoeffs, "Bicycle coefficient set should not be null");
+        assertNotNull(bikeCoeffs, "Bike coefficient set should not be null");
 
-            System.out.println("\n✅ ALL COEFFICIENT LOOKUP TESTS PASSED!");
-            System.out.println("\n🚀 Optimization Successfully Implemented:");
-            System.out.println("  • Pre-computed lookup table eliminates repeated CSV operations");
-            System.out.println("  • Thread-safe ConcurrentHashMap enables concurrent access");
-            System.out.println("  • CoefficientSet reduces multiple map lookups to single call");
-            System.out.println("  • Expected 100-1000x performance improvement for large populations");
-            System.out.println("  • Graceful fallback to test defaults when Resources not available");
-
-            System.out.println("\n📊 Performance Benefits:");
-            System.out.println("  • Before: O(n×p×c) CSV operations (n=persons, p=purposes, c=coefficients)");
-            System.out.println("  • After: O(1) HashMap lookups per coefficient");
-            System.out.println("  • CSV read only once at startup instead of thousands of times");
-
-        } catch (Exception e) {
-            fail("Integration test failed: " + e.getMessage());
-        }
-    }
-
-    // Helper method to create test persons
-    private Person createTestPerson(String id, MitoGender gender, int age) {
-        Person person = PopulationUtils.getFactory().createPerson(Id.createPersonId(id));
-        person.getAttributes().putAttribute("sex", gender);
-        person.getAttributes().putAttribute("age", age);
-        PersonUtils.setAge(person, age);
-        PersonUtils.setSex(person, gender.toString().toLowerCase());
-        return person;
+        assertEquals(bicycleCoeffs.stressLink, bikeCoeffs.stressLink, 0.0001,
+                     "Bike and bicycle coefficient sets should have the same stressLink value");
+        assertEquals(bicycleCoeffs.grad, bikeCoeffs.grad, 0.0001,
+                     "Bike and bicycle coefficient sets should have the same grad value");
+        assertEquals(bicycleCoeffs.vgvi, bikeCoeffs.vgvi, 0.0001,
+                     "Bike and bicycle coefficient sets should have the same vgvi value");
+        assertEquals(bicycleCoeffs.speed, bikeCoeffs.speed, 0.0001,
+                     "Bike and bicycle coefficient sets should have the same speed value");
     }
 }

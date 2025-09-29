@@ -72,6 +72,8 @@ import java.util.stream.Collectors;
 
 import de.tum.bgu.msm.util.CoefficientLookup;
 import de.tum.bgu.msm.util.CoefficientLookup.CoefficientSet;
+
+import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
 import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMitoBaseProperties;
 
 public class HealthExposureModelMEL extends AbstractModel implements ModelUpdateListener {
@@ -85,8 +87,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     private List<Day> weekdays = Arrays.asList(Day.monday,Day.tuesday,Day.wednesday,Day.thursday,Day.friday);
     // private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new HashMap<>();
     private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
-    private static final java.util.Properties mitoProperties = getMitoBaseProperties();
-
 
     public HealthExposureModelMEL(DataContainer dataContainer, Properties properties, Random random, Config config) {
         super(dataContainer, properties, random);

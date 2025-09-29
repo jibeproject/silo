@@ -80,7 +80,8 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
     }
 
     private void runAccidentRateModel(int year) {
-        //generate link injury risks for each simulated day
+        Map<Id<Link>, LinkInfo> linkInfoMap = ((HealthDataContainerImpl) dataContainer).getLinkInfo();
+        //generate link injury risks
         for (Day day : simulatedDays) {
             logger.info("Updating injury risk for year: " + year + "| day of week: " + day + ".");
 
@@ -112,8 +113,8 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
 
             for (Id<Link> linkId : model.getAccidentsContext().getLinkId2info().keySet()) {
                 //((de.tum.bgu.msm.scenarios.health.HealthDataContainerImpl)dataContainer).getLinkInfoByDay().get(day).get(linkId).setLightCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getLightCasualityExposureByAccidentTypeByTime());
-                //((DataContainerHealth) dataContainer).getLinkInfo().get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
-                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
+                ((DataContainerHealth) dataContainer).getLinkInfo().get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
+//                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
             }
 
             logger.info("====================");
@@ -127,7 +128,7 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
             }
 
             // Iterate over each LinkId in the linkInfoByDay map for the given day
-            Map<Id<Link>, LinkInfo> linkInfoMap = ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day);
+//            Map<Id<Link>, LinkInfo> linkInfoMap = ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day);
             if (linkInfoMap == null) {
                 logger.warn("No link info available for day: {}", day);
                 return;
