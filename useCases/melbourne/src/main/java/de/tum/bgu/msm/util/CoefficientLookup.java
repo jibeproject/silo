@@ -62,7 +62,8 @@ public class CoefficientLookup {
 
         // Get all purposes from the properties
         String[] purposeStrings = Resources.instance.getString(Properties.TRIP_PURPOSES).split(",");
-        String[] modes = {"bicycle", "bike", "walk"};
+        // Modes match CSV header
+        String[] modes = {"autoDriver", "autoPassenger", "pt", "bicycle", "walk"};
 
         int coefficientsLoaded = 0;
 
