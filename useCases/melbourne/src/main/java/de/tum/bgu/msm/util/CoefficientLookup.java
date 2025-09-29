@@ -1,21 +1,20 @@
 package de.tum.bgu.msm.util;
 
 import de.tum.bgu.msm.data.Purpose;
-import de.tum.bgu.msm.resources.Properties;
-import de.tum.bgu.msm.resources.Resources;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import uk.cam.mrc.phm.util.ExtractCoefficient;
 
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
-
 /**
  * Pre-computed lookup table for mode choice coefficients using CoefficientSets to optimize memory usage.
  * This class initialises once at startup and provides fast, thread-safe access to coefficients.
+ * Uses the existing ExtractCoefficient function to retrieve and cache coefficients.
  */
 public class CoefficientLookup {
     private static final Logger logger = LogManager.getLogger(CoefficientLookup.class);
+    private static final Properties properties = MelbourneImplementationConfig.getMitoBaseProperties();
 
     // Optimized lookup table: Purpose -> Mode -> CoefficientSet (pre-computed)
     private static final Map<Purpose, Map<String, CoefficientSet>> COEFFICIENT_SETS = new ConcurrentHashMap<>();
@@ -23,8 +22,64 @@ public class CoefficientLookup {
     // Track initialization status
     private static volatile boolean initialised = false;
 
+    // Standard modes expected in coefficient files
+    private static final String[] MODES = {"autoDriver", "autoPassenger", "pt", "bicycle", "walk"};
+
+    // Standard attributes expected in coefficient files
+    private static final String[] ATTRIBUTES = {
+        "grad", "stressLink", "vgvi", "speed",
+        "grad_f", "stressLink_f", "vgvi_f", "speed_f",
+        "grad_c", "stressLink_c", "vgvi_c", "speed_c"
+    };
+
+    // Purposes to load (for testing, only NHBW is available)
+    private static Purpose[] PURPOSES = getPurposesFromProperties();
+
+    private static Purpose[] getPurposesFromProperties() {
+        String purposeString = properties.getProperty("trip.purposes");
+        if (purposeString == null || purposeString.trim().isEmpty()) {
+            logger.warn("No trip.purposes property found, reverting to test case NHBW only");
+            return new Purpose[]{Purpose.NHBW};
+        }
+
+        String[] purposeNames = purposeString.split(",");
+        java.util.List<Purpose> validPurposes = new java.util.ArrayList<>();
+
+        for (String purposeName : purposeNames) {
+            try {
+                Purpose purpose = Purpose.valueOf(purposeName.trim());
+                validPurposes.add(purpose);
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid purpose name '{}' in trip.purposes property", purposeName.trim());
+            }
+        }
+
+        if (validPurposes.isEmpty()) {
+            logger.warn("No valid purposes found in trip.purposes property, using all purposes");
+            return Purpose.values();
+        }
+
+        logger.info("Loaded {} purposes from trip.purposes property: {}", validPurposes.size(), validPurposes);
+        return validPurposes.toArray(new Purpose[0]);
+    }
+
     /**
-     * Initialise the lookup table once at startup
+     * Normalize mode names to handle common variations.
+     * Specifically handles 'bike' -> 'bicycle' mapping.
+     */
+    private static String cleanMode(String mode) {
+        if (mode == null) {
+            return null;
+        }
+        // Handle bike/bicycle ambiguity
+        if ("bike".equalsIgnoreCase(mode)) {
+            return "bicycle";
+        }
+        return mode;
+    }
+
+    /**
+     * Initialise the lookup table with coefficients using the existing ExtractCoefficient function
      */
     public static synchronized void initialise() {
         if (initialised) {
@@ -32,164 +87,62 @@ public class CoefficientLookup {
         }
 
         try {
-            // Check if Resources is available for production use
-            if (Resources.instance != null) {
-                initialiseFromResources();
-            } else {
-                // For testing - initialise with default values
-                initialiseForTesting();
-            }
+            initialiseFromExtractCoefficient();
             initialised = true;
+            logger.info("Coefficient lookup table initialised using ExtractCoefficient");
+            logger.info("  - Purposes: {}", COEFFICIENT_SETS.keySet());
+            logger.info("  - Modes: {}", java.util.Arrays.toString(MODES));
         } catch (Exception e) {
             logger.error("Failed to initialise coefficient lookup table", e);
-            // For testing - try fallback initialization
-            try {
-                initialiseForTesting();
-                initialised = true;
-                logger.info("Initialised coefficient lookup table with test defaults");
-            } catch (Exception fallbackError) {
-                throw new RuntimeException("Failed to initialise coefficient lookup table", e);
-            }
+            throw new RuntimeException("Failed to initialise coefficient lookup table", e);
         }
     }
 
+    public static synchronized void initialiseTest() {
+        PURPOSES = new Purpose[]{Purpose.NHBW};
+        initialise();
+    }
+
     /**
-     * Initialise from Resources (production mode)
+     * Initialise from ExtractCoefficient function
      */
-    private static void initialiseFromResources() {
-        logger.info("Initializing coefficient lookup table from Resources...");
-        long startTime = System.currentTimeMillis();
+    private static void initialiseFromExtractCoefficient() {
+        logger.info("Initializing coefficient lookup table using ExtractCoefficient...");
 
-        // Get all purposes from the properties
-        String[] purposeStrings = Resources.instance.getString(Properties.TRIP_PURPOSES).split(",");
-        // Modes match CSV header
-        String[] modes = {"autoDriver", "autoPassenger", "pt", "bicycle", "walk"};
-
-        int coefficientsLoaded = 0;
-
-        for (String purposeString : purposeStrings) {
-            Purpose purpose = Purpose.valueOf(purposeString.trim());
+        for (Purpose purpose : PURPOSES) {
             Map<String, CoefficientSet> modeMap = new ConcurrentHashMap<>();
 
-            for (String mode : modes) {
-                CoefficientSet coefficientSet = loadCoefficientSetFromResources(purpose, mode);
-                modeMap.put(mode, coefficientSet);
-                coefficientsLoaded++;
-            }
+            for (String mode : MODES) {
+                // Extract all coefficients for this purpose/mode combination using the local ExtractCoefficient class
+                Double grad = ExtractCoefficient.extractCoefficient(purpose, mode, "grad");
+                Double stressLink = ExtractCoefficient.extractCoefficient(purpose, mode, "stressLink");
+                Double vgvi = ExtractCoefficient.extractCoefficient(purpose, mode, "vgvi");
+                Double speed = ExtractCoefficient.extractCoefficient(purpose, mode, "speed");
+                Double grad_f = ExtractCoefficient.extractCoefficient(purpose, mode, "grad_f");
+                Double stressLink_f = ExtractCoefficient.extractCoefficient(purpose, mode, "stressLink_f");
+                Double vgvi_f = ExtractCoefficient.extractCoefficient(purpose, mode, "vgvi_f");
+                Double speed_f = ExtractCoefficient.extractCoefficient(purpose, mode, "speed_f");
+                Double grad_c = ExtractCoefficient.extractCoefficient(purpose, mode, "grad_c");
+                Double stressLink_c = ExtractCoefficient.extractCoefficient(purpose, mode, "stressLink_c");
+                Double vgvi_c = ExtractCoefficient.extractCoefficient(purpose, mode, "vgvi_c");
+                Double speed_c = ExtractCoefficient.extractCoefficient(purpose, mode, "speed_c");
 
-            COEFFICIENT_SETS.put(purpose, modeMap);
-        }
+                // Create CoefficientSet for this mode
+                CoefficientSet coefficientSet = new CoefficientSet(
+                    grad, stressLink, vgvi, speed,
+                    grad_f, stressLink_f, vgvi_f, speed_f,
+                    grad_c, stressLink_c, vgvi_c, speed_c
+                );
 
-        long duration = System.currentTimeMillis() - startTime;
-        logger.info("Coefficient lookup table initialised with {} purposes, {} coefficient sets loaded in {}ms",
-                COEFFICIENT_SETS.size(), coefficientsLoaded, duration);
-    }
-
-    /**
-     * Load a complete CoefficientSet from Resources for a specific purpose/mode combination
-     */
-    private static CoefficientSet loadCoefficientSetFromResources(Purpose purpose, String mode) {
-        try {
-            Double grad = ExtractCoefficient.extractCoefficient(purpose, mode, "grad");
-            Double stressLink = ExtractCoefficient.extractCoefficient(purpose, mode, "stressLink");
-            Double vgvi = ExtractCoefficient.extractCoefficient(purpose, mode, "vgvi");
-            Double speed = ExtractCoefficient.extractCoefficient(purpose, mode, "speed");
-            Double grad_f = ExtractCoefficient.extractCoefficient(purpose, mode, "grad_f");
-            Double stressLink_f = ExtractCoefficient.extractCoefficient(purpose, mode, "stressLink_f");
-            Double vgvi_f = ExtractCoefficient.extractCoefficient(purpose, mode, "vgvi_f");
-            Double speed_f = ExtractCoefficient.extractCoefficient(purpose, mode, "speed_f");
-            Double grad_c = ExtractCoefficient.extractCoefficient(purpose, mode, "grad_c");
-            Double stressLink_c = ExtractCoefficient.extractCoefficient(purpose, mode, "stressLink_c");
-            Double vgvi_c = ExtractCoefficient.extractCoefficient(purpose, mode, "vgvi_c");
-            Double speed_c = ExtractCoefficient.extractCoefficient(purpose, mode, "speed_c");
-
-            return new CoefficientSet(
-                grad, stressLink, vgvi, speed,
-                grad_f, stressLink_f, vgvi_f, speed_f,
-                grad_c, stressLink_c, vgvi_c, speed_c
-            );
-        } catch (Exception e) {
-            logger.warn("Failed to load coefficient set for purpose={}, mode={}: {}",
-                       purpose, mode, e.getMessage());
-            return getTestDefaultCoefficientSet(purpose, mode);
-        }
-    }
-
-    /**
-     * Initialise with test defaults (testing mode)
-     */
-    private static void initialiseForTesting() {
-        logger.info("Initializing coefficient lookup table with test defaults...");
-
-        Purpose[] purposes = {Purpose.NHBW, Purpose.HBW, Purpose.HBS, Purpose.HBO};
-        String[] modes = {"bicycle", "bike", "walk"};
-
-        for (Purpose purpose : purposes) {
-            Map<String, CoefficientSet> modeMap = new ConcurrentHashMap<>();
-
-            for (String mode : modes) {
-                CoefficientSet coefficientSet = getTestDefaultCoefficientSet(purpose, mode);
                 modeMap.put(mode, coefficientSet);
             }
 
             COEFFICIENT_SETS.put(purpose, modeMap);
+            logger.debug("Loaded coefficients for purpose {} with {} modes", purpose, MODES.length);
         }
 
-        logger.info("Test coefficient lookup table initialised with {} purposes", COEFFICIENT_SETS.size());
-    }
-
-    /**
-     * Get test default CoefficientSet for a specific purpose/mode combination
-     */
-    private static CoefficientSet getTestDefaultCoefficientSet(Purpose purpose, String mode) {
-        // Use actual values from mc_coefficients_nhbw.csv for NHBW purpose
-        if (purpose == Purpose.NHBW) {
-            if (mode.equals("bicycle") || mode.equals("bike")) {
-                return new CoefficientSet(
-                    -0.2,    // grad
-                    -0.5,    // stressLink
-                    0.3,     // vgvi
-                    0.2,     // speed
-                    0.05,    // grad_f
-                    0.05,    // stressLink_f
-                    0.05,    // vgvi_f
-                    0.05,    // speed_f
-                    0.02,    // grad_c
-                    0.02,    // stressLink_c
-                    0.02,    // vgvi_c
-                    0.02     // speed_c
-                );
-            } else if (mode.equals("walk")) {
-                return new CoefficientSet(
-                    0.1,     // grad
-                    -0.1,    // stressLink
-                    0.3,     // vgvi
-                    0.4,     // speed
-                    0.05,    // grad_f
-                    0.05,    // stressLink_f
-                    0.05,    // vgvi_f
-                    0.05,    // speed_f
-                    0.02,    // grad_c
-                    0.02,    // stressLink_c
-                    0.02,    // vgvi_c
-                    0.02     // speed_c
-                );
-            }
-        }
-
-        // Default coefficients for other purposes
-        if (mode.equals("walk")) {
-            return new CoefficientSet(
-                0.1, -0.1, 0.3, 0.4,      // base coefficients
-                -0.05, -0.1, 0.05, 0.1,   // female interactions
-                0.02, -0.08, 0.03, 0.06   // child interactions
-            );
-        } else { // bicycle/bike
-            return new CoefficientSet(
-                -0.2, -0.5, 0.3, 0.2,     // base coefficients
-                0.05, 0.05, 0.05, 0.05,   // female interactions
-                0.02, 0.02, 0.02, 0.02    // child interactions
-            );
+        if (COEFFICIENT_SETS.isEmpty()) {
+            throw new RuntimeException("No valid coefficient data loaded");
         }
     }
 
@@ -198,12 +151,20 @@ public class CoefficientLookup {
      */
     public static double getCoefficient(Purpose purpose, String mode, String attribute) {
         if (!initialised) {
-            initialise();
+            throw new IllegalStateException("CoefficientLookup not initialised. Call initialise() first.");
         }
+
+        // clean mode name to handle bike/bicycle ambiguity
+        String cleandMode = cleanMode(mode);
 
         CoefficientSet coefficients = COEFFICIENT_SETS
                 .getOrDefault(purpose, Map.of())
-                .getOrDefault(mode, getTestDefaultCoefficientSet(purpose, mode));
+                .get(cleandMode);
+
+        if (coefficients == null) {
+            logger.warn("No coefficients found for purpose={}, mode={}", purpose, cleandMode);
+            return 0.0;
+        }
 
         return coefficients.getAttribute(attribute);
     }
@@ -214,12 +175,23 @@ public class CoefficientLookup {
      */
     public static CoefficientSet getCoefficients(Purpose purpose, String mode) {
         if (!initialised) {
-            initialise();
+            throw new IllegalStateException("CoefficientLookup not initialised. Call initialise() first.");
         }
 
-        return COEFFICIENT_SETS
+        // clean mode name to handle bike/bicycle ambiguity
+        String cleandMode = cleanMode(mode);
+
+        CoefficientSet coefficients = COEFFICIENT_SETS
                 .getOrDefault(purpose, Map.of())
-                .getOrDefault(mode, getTestDefaultCoefficientSet(purpose, mode));
+                .get(cleandMode);
+
+        if (coefficients == null) {
+            logger.warn("No coefficients found for purpose={}, mode={}", purpose, cleandMode);
+            // Return empty coefficient set with all zeros
+            return new CoefficientSet(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+
+        return coefficients;
     }
 
     /**

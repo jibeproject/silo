@@ -77,7 +77,7 @@ import java.io.File;
 import java.util.*;
 import java.util.function.ToDoubleFunction;
 
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMitoBaseProperties;
+import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
 import static de.tum.bgu.msm.util.parseMEL.getHoursAsSeconds;
 import static org.matsim.core.config.groups.ScoringConfigGroup.ModeParams;
 
@@ -103,7 +103,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
     protected final Random random;
 
-    private static final java.util.Properties mitoProperties = getMitoBaseProperties();
+    private static final java.util.Properties melbourneProperties = getMelbourneProperties();
 
     public MatsimTransportModelMELHealth(DataContainer dataContainer, Config matsimConfig,
                                          Properties properties, MatsimScenarioAssembler scenarioAssembler,
