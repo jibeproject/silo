@@ -77,8 +77,8 @@ import java.io.File;
 import java.util.*;
 import java.util.function.ToDoubleFunction;
 
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
-import static de.tum.bgu.msm.util.parseMEL.getHoursAsSeconds;
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
+import static uk.cam.mrc.phm.util.parseMEL.getHoursAsSeconds;
 import static org.matsim.core.config.groups.ScoringConfigGroup.ModeParams;
 
 /**

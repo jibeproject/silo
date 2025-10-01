@@ -4,7 +4,7 @@ import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import de.tum.bgu.msm.data.Day;
 import de.tum.bgu.msm.health.injury.*;
 import de.tum.bgu.msm.properties.Properties;
-import de.tum.bgu.msm.util.MelbourneImplementationConfig;
+import uk.cam.mrc.phm.util.MelbourneImplementationConfig;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;

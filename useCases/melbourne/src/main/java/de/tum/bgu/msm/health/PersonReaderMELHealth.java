@@ -5,8 +5,8 @@ import de.tum.bgu.msm.data.household.Household;
 import de.tum.bgu.msm.data.household.HouseholdDataManager;
 import de.tum.bgu.msm.data.person.*;
 import de.tum.bgu.msm.io.input.PersonReader;
-import de.tum.bgu.msm.util.parseMEL;
 import de.tum.bgu.msm.utils.SiloUtil;
+import uk.cam.mrc.phm.util.parseMEL;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
