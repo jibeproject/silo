@@ -8,7 +8,7 @@ import de.tum.bgu.msm.data.job.JobMEL;
 import de.tum.bgu.msm.health.data.ActivityLocation;
 import de.tum.bgu.msm.health.data.DataContainerHealth;
 import de.tum.bgu.msm.io.input.JobReader;
-import de.tum.bgu.msm.util.parseMEL;
+import uk.cam.mrc.phm.util.parseMEL;
 import de.tum.bgu.msm.utils.SiloUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

@@ -33,8 +33,8 @@ import de.tum.bgu.msm.matsim.SiloMatsimUtils;
 import de.tum.bgu.msm.models.transportModel.TransportModel;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.properties.modules.TransportModelPropertiesModule;
-import de.tum.bgu.msm.util.CoefficientLookup;
-import de.tum.bgu.msm.util.CoefficientLookup.CoefficientSet;
+import uk.cam.mrc.phm.util.CoefficientLookup;
+import uk.cam.mrc.phm.util.CoefficientLookup.CoefficientSet;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
@@ -77,8 +77,8 @@ import java.io.File;
 import java.util.*;
 import java.util.function.ToDoubleFunction;
 
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
-import static de.tum.bgu.msm.util.parseMEL.getHoursAsSeconds;
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
+import static uk.cam.mrc.phm.util.parseMEL.getHoursAsSeconds;
 import static org.matsim.core.config.groups.ScoringConfigGroup.ModeParams;
 
 /**

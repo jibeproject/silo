@@ -2,13 +2,11 @@ package de.tum.bgu.msm.health;
 
 import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import com.google.common.collect.Iterables;
-import com.google.common.math.LongMath;
 import de.tum.bgu.msm.container.DataContainer;
 import de.tum.bgu.msm.data.*;
 import de.tum.bgu.msm.data.job.JobMEL;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.person.Person;
-import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.health.data.*;
 import de.tum.bgu.msm.health.diseaseModelOffline.HealthExposuresReader;
 import de.tum.bgu.msm.health.injury.AccidentType;
@@ -23,16 +21,13 @@ import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.util.concurrent.ConcurrentExecutor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.locationtech.jts.geom.Coordinate;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
-import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.api.core.v01.population.PopulationFactory;
-import org.matsim.contrib.analysis.vsp.traveltimedistance.TripsExtractor;
 import org.matsim.contrib.dvrp.trafficmonitoring.TravelTimeUtils;
 import org.matsim.contrib.emissions.Pollutant;
 import org.matsim.core.config.Config;
@@ -66,15 +61,11 @@ import routing.travelTime.WalkTravelTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
 
-import de.tum.bgu.msm.util.CoefficientLookup;
-import de.tum.bgu.msm.util.CoefficientLookup.CoefficientSet;
-
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMitoBaseProperties;
+import uk.cam.mrc.phm.util.CoefficientLookup;
+import uk.cam.mrc.phm.util.CoefficientLookup.CoefficientSet;
 
 public class HealthExposureModelMEL extends AbstractModel implements ModelUpdateListener {
     private int latestMatsimYear = -1;

@@ -160,10 +160,10 @@ public class DataBuilderHealth {
         Map<Day, Map<Id<Link>, LinkInfo>> dayMaps = new HashMap<>();
 
         // Pre-create day-specific maps
-//        Day[] days = {Day.thursday, Day.saturday, Day.sunday};
-//        for (Day day : days) {
-//            dayMaps.put(day, new HashMap<>());
-//        }
+        Day[] days = {Day.thursday, Day.saturday, Day.sunday};
+        for (Day day : days) {
+            dayMaps.put(day, new HashMap<>());
+        }
 
         // Single iteration through network links
         for (Link link : network.getLinks().values()) {
@@ -173,16 +173,16 @@ public class DataBuilderHealth {
             linkInfoMap.put(linkId, new LinkInfo(linkId));
 
             // Create LinkInfo instances for each day
-//            for (Day day : days) {
-//                dayMaps.get(day).put(linkId, new LinkInfo(linkId));
-//            }
+            for (Day day : days) {
+                dayMaps.get(day).put(linkId, new LinkInfo(linkId));
+            }
         }
 
         // Set all maps in the data container
         dataContainer.setLinkInfo(linkInfoMap);
-//        for (Day day : days) {
-//            dataContainer.setLinkInfoByDay(dayMaps.get(day), day);
-//        }
+        for (Day day : days) {
+            dataContainer.setLinkInfoByDay(dayMaps.get(day), day);
+        }
     }
 
     private static Map<Integer, List<Diseases>> getHealthPrevalenceData(Properties properties) {
