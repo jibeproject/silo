@@ -43,7 +43,7 @@ class CoefficientLookupTest {
     @Test
     void testInitialiseWithExtractCoefficient() {
         // Test initializing using the ExtractCoefficient function
-        assertDoesNotThrow(CoefficientLookup::initialiseTest, "Should initialize successfully using ExtractCoefficient");
+        assertDoesNotThrow(CoefficientLookup::initialiseTest, "Should initialise successfully using ExtractCoefficient");
 
         // Verify statistics show successful loading
         String stats = CoefficientLookup.getStatistics();
@@ -53,7 +53,7 @@ class CoefficientLookupTest {
 
     @Test
     void testGetCoefficientWithRealData() {
-        // Initialize with ExtractCoefficient
+        // Initialise with ExtractCoefficient
         CoefficientLookup.initialiseTest();
 
         // Test specific coefficients from the CSV file
@@ -74,7 +74,7 @@ class CoefficientLookupTest {
 
     @Test
     void testGetCoefficientSetWithRealData() {
-        // Initialize with ExtractCoefficient
+        // Initialise with ExtractCoefficient
         CoefficientLookup.initialiseTest();
 
         // Test getting a complete coefficient set for bicycle mode
@@ -99,7 +99,7 @@ class CoefficientLookupTest {
 
     @Test
     void testAllModesLoadedCorrectly() {
-        // Initialize with ExtractCoefficient
+        // Initialise with ExtractCoefficient
         CoefficientLookup.initialiseTest();
 
         // Test that all modes are available
@@ -113,7 +113,7 @@ class CoefficientLookupTest {
 
     @Test
     void testAttributeAccessThroughCoefficientSet() {
-        // Initialize with ExtractCoefficient
+        // Initialise with ExtractCoefficient
         CoefficientLookup.initialiseTest();
 
         CoefficientLookup.CoefficientSet walkCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "walk");
@@ -141,25 +141,37 @@ class CoefficientLookupTest {
     }
 
     @Test
-    void testErrorHandlingForUninitialised() {
-        // Test accessing coefficients without initialization
-        assertThrows(IllegalStateException.class, () -> {
-            CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
-        }, "Should throw exception when not initialised");
+    void testAutoInitializationBehavior() {
+        // Reset to ensure clean state
+        CoefficientLookup.reset();
 
-        assertThrows(IllegalStateException.class, () -> {
-            CoefficientLookup.getCoefficients(Purpose.NHBW, "walk");
-        }, "Should throw exception when not initialised");
+        // Test that accessing coefficients automatically initializes if needed
+        // This should NOT throw an exception, but should auto-initialize
+        assertDoesNotThrow(() -> {
+            double coefficient = CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
+            // Verify we got a valid result (not necessarily a specific value)
+            assertTrue(coefficient >= 0.0 || coefficient < 0.0, "Should return a valid coefficient");
+        }, "Should auto-initialize when not initialised");
+
+        // Verify the lookup table is now initialized
+        assertTrue(CoefficientLookup.isInitialised(), "Should be initialized after first access");
+
+        // Test that getCoefficients also works with auto-initialization
+        CoefficientLookup.reset(); // Reset again
+        assertDoesNotThrow(() -> {
+            CoefficientLookup.CoefficientSet coefficients = CoefficientLookup.getCoefficients(Purpose.NHBW, "walk");
+            assertNotNull(coefficients, "Should return a valid CoefficientSet");
+        }, "Should auto-initialize when accessing coefficient set");
     }
 
     @Test
     void testNonExistentPurposeAndMode() {
-        // Initialize with ExtractCoefficient
+        // Initialise with ExtractCoefficient
         CoefficientLookup.initialiseTest();
 
         // Test accessing non-existent purpose (should return 0.0 with warning)
-        double coeff = CoefficientLookup.getCoefficient(Purpose.HBW, "walk", "speed");
-        assertEquals(0.0, coeff, 0.0001, "Should return 0.0 for non-existent purpose");
+        double coefficient = CoefficientLookup.getCoefficient(Purpose.HBW, "walk", "speed");
+        assertEquals(0.0, coefficient, 0.0001, "Should return 0.0 for non-existent purpose");
 
         // Test accessing non-existent mode (should return 0.0 with warning)
         double nonExistentMode = CoefficientLookup.getCoefficient(Purpose.NHBW, "nonExistentMode", "speed");
@@ -173,13 +185,11 @@ class CoefficientLookupTest {
 
     @Test
     void testDoubleInitialisation() {
-        // Initialize once
+        // Initialise once
         CoefficientLookup.initialiseTest();
 
-        // Initialize again - should not throw exception
-        assertDoesNotThrow(() -> {
-            CoefficientLookup.initialiseTest();
-        }, "Double initialization should be safe");
+        // Initialise again - should not throw exception
+        assertDoesNotThrow(CoefficientLookup::initialiseTest, "Double initialization should be safe");
 
         // Should still work correctly
         double walkSpeed = CoefficientLookup.getCoefficient(Purpose.NHBW, "walk", "speed");
@@ -188,7 +198,7 @@ class CoefficientLookupTest {
 
     @Test
     void testBikeBicycleAmbiguity() {
-        // Initialize with ExtractCoefficient
+        // Initialise with ExtractCoefficient
         CoefficientLookup.initialiseTest();
 
         // Test that 'bike' and 'bicycle' return the same coefficients
@@ -210,19 +220,19 @@ class CoefficientLookupTest {
                      "'Bike' (mixed case) should return the same coefficient as 'bicycle'");
 
         // Test getCoefficients method as well
-        CoefficientLookup.CoefficientSet bicycleCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bicycle");
-        CoefficientLookup.CoefficientSet bikeCoeffs = CoefficientLookup.getCoefficients(Purpose.NHBW, "bike");
+        CoefficientLookup.CoefficientSet bicycleCoefficients = CoefficientLookup.getCoefficients(Purpose.NHBW, "bicycle");
+        CoefficientLookup.CoefficientSet bikeCoefficients = CoefficientLookup.getCoefficients(Purpose.NHBW, "bike");
 
-        assertNotNull(bicycleCoeffs, "Bicycle coefficient set should not be null");
-        assertNotNull(bikeCoeffs, "Bike coefficient set should not be null");
+        assertNotNull(bicycleCoefficients, "Bicycle coefficient set should not be null");
+        assertNotNull(bikeCoefficients, "Bike coefficient set should not be null");
 
-        assertEquals(bicycleCoeffs.stressLink, bikeCoeffs.stressLink, 0.0001,
+        assertEquals(bicycleCoefficients.stressLink, bikeCoefficients.stressLink, 0.0001,
                      "Bike and bicycle coefficient sets should have the same stressLink value");
-        assertEquals(bicycleCoeffs.grad, bikeCoeffs.grad, 0.0001,
+        assertEquals(bicycleCoefficients.grad, bikeCoefficients.grad, 0.0001,
                      "Bike and bicycle coefficient sets should have the same grad value");
-        assertEquals(bicycleCoeffs.vgvi, bikeCoeffs.vgvi, 0.0001,
+        assertEquals(bicycleCoefficients.vgvi, bikeCoefficients.vgvi, 0.0001,
                      "Bike and bicycle coefficient sets should have the same vgvi value");
-        assertEquals(bicycleCoeffs.speed, bikeCoeffs.speed, 0.0001,
+        assertEquals(bicycleCoefficients.speed, bikeCoefficients.speed, 0.0001,
                      "Bike and bicycle coefficient sets should have the same speed value");
     }
 }

@@ -21,16 +21,10 @@ public class CoefficientLookup {
 
     // Track initialization status
     private static volatile boolean initialised = false;
+    private static final Object INIT_LOCK = new Object();
 
     // Standard modes expected in coefficient files
     private static final String[] MODES = {"autoDriver", "autoPassenger", "pt", "bicycle", "walk"};
-
-    // Standard attributes expected in coefficient files
-    private static final String[] ATTRIBUTES = {
-        "grad", "stressLink", "vgvi", "speed",
-        "grad_f", "stressLink_f", "vgvi_f", "speed_f",
-        "grad_c", "stressLink_c", "vgvi_c", "speed_c"
-    };
 
     // Purposes to load (for testing, only NHBW is available)
     private static Purpose[] PURPOSES = getPurposesFromProperties();
@@ -80,27 +74,48 @@ public class CoefficientLookup {
 
     /**
      * Initialise the lookup table with coefficients using the existing ExtractCoefficient function
+     * Thread-safe using double-checked locking for simplicity and maintainability.
      */
-    public static synchronized void initialise() {
+    public static void initialise() {
         if (initialised) {
             return;
         }
-
-        try {
-            initialiseFromExtractCoefficient();
-            initialised = true;
-            logger.info("Coefficient lookup table initialised using ExtractCoefficient");
-            logger.info("  - Purposes: {}", COEFFICIENT_SETS.keySet());
-            logger.info("  - Modes: {}", java.util.Arrays.toString(MODES));
-        } catch (Exception e) {
-            logger.error("Failed to initialise coefficient lookup table", e);
-            throw new RuntimeException("Failed to initialise coefficient lookup table", e);
+        synchronized (INIT_LOCK) {
+            if (initialised) {
+                return;
+            }
+            try {
+                initialiseFromExtractCoefficient();
+                initialised = true;
+                logger.info("Coefficient lookup table initialised using ExtractCoefficient");
+                logger.info("  - Purposes: {}", COEFFICIENT_SETS.keySet());
+                logger.info("  - Modes: {}", java.util.Arrays.toString(MODES));
+            } catch (Exception e) {
+                logger.error("Failed to initialise coefficient lookup table", e);
+                throw new RuntimeException("Failed to initialise coefficient lookup table", e);
+            }
         }
     }
 
     public static synchronized void initialiseTest() {
         PURPOSES = new Purpose[]{Purpose.NHBW};
         initialise();
+    }
+
+    /**
+     * Check if the lookup table is initialized (thread-safe)
+     */
+    public static boolean isInitialised() {
+        return initialised;
+    }
+
+    /**
+     * Ensure initialisation before use (thread-safe)
+     */
+    private static void ensureInitialisedBeforeUse() {
+        if (!initialised) {
+            initialise();
+        }
     }
 
     /**
@@ -150,22 +165,16 @@ public class CoefficientLookup {
      * Fast, thread-safe coefficient lookup for individual attributes (backward compatibility)
      */
     public static double getCoefficient(Purpose purpose, String mode, String attribute) {
-        if (!initialised) {
-            throw new IllegalStateException("CoefficientLookup not initialised. Call initialise() first.");
-        }
-
+        ensureInitialisedBeforeUse();
         // clean mode name to handle bike/bicycle ambiguity
         String cleandMode = cleanMode(mode);
-
         CoefficientSet coefficients = COEFFICIENT_SETS
                 .getOrDefault(purpose, Map.of())
                 .get(cleandMode);
-
         if (coefficients == null) {
             logger.warn("No coefficients found for purpose={}, mode={}", purpose, cleandMode);
             return 0.0;
         }
-
         return coefficients.getAttribute(attribute);
     }
 
@@ -174,17 +183,12 @@ public class CoefficientLookup {
      * This is the most efficient method for the calculateActiveModeWeights function.
      */
     public static CoefficientSet getCoefficients(Purpose purpose, String mode) {
-        if (!initialised) {
-            throw new IllegalStateException("CoefficientLookup not initialised. Call initialise() first.");
-        }
-
+        ensureInitialisedBeforeUse();
         // clean mode name to handle bike/bicycle ambiguity
         String cleandMode = cleanMode(mode);
-
         CoefficientSet coefficients = COEFFICIENT_SETS
                 .getOrDefault(purpose, Map.of())
                 .get(cleandMode);
-
         if (coefficients == null) {
             logger.warn("No coefficients found for purpose={}, mode={}", purpose, cleandMode);
             // Return empty coefficient set with all zeros

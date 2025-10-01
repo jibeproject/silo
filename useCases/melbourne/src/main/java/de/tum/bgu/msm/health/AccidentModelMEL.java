@@ -80,7 +80,6 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
     }
 
     private void runAccidentRateModel(int year) {
-        Map<Id<Link>, LinkInfo> linkInfoMap = ((HealthDataContainerImpl) dataContainer).getLinkInfo();
         //generate link injury risks
         for (Day day : simulatedDays) {
             logger.info("Updating injury risk for year: " + year + "| day of week: " + day + ".");
@@ -98,23 +97,13 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
             // float scalingFactor = (float) (properties.main.scaleFactor * properties.transportModel.matsimScaleFactor);
             float scalingFactor = 0.1f; // todo: temporary fix
             scenario.addScenarioElement("accidentModelFile", properties.main.baseDirectory + "input/accident/");
-            //System.out.println(scenario.getScenarioElement("accidentModelFile").toString());
-            //System.exit(0);
-
-            // injury model (old version)
-            //AccidentRateModelMEL model = new AccidentRateModelMEL(scenario, 1.f / scalingFactor, day);
-            //model.runCasualtyRateMEL(); // number of casualties per link (max 1 per link, otherwise 0)
-            // model.computeLinkLevelInjuryRisk(); // R=1/v where v is the traffic volume
-            // model.computePersonLevelInjuryRiskOffline();
 
             // osm-based injury model (new version)
             AccidentRateModelOsmMEL model = new AccidentRateModelOsmMEL(properties, scenario, 1.f / scalingFactor, day);
             model.runCasualtyRateMEL();
 
             for (Id<Link> linkId : model.getAccidentsContext().getLinkId2info().keySet()) {
-                //((de.tum.bgu.msm.scenarios.health.HealthDataContainerImpl)dataContainer).getLinkInfoByDay().get(day).get(linkId).setLightCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getLightCasualityExposureByAccidentTypeByTime());
-                ((DataContainerHealth) dataContainer).getLinkInfo().get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
-//                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
+                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
             }
 
             logger.info("====================");
@@ -128,7 +117,7 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
             }
 
             // Iterate over each LinkId in the linkInfoByDay map for the given day
-//            Map<Id<Link>, LinkInfo> linkInfoMap = ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day);
+            Map<Id<Link>, LinkInfo> linkInfoMap = ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day);
             if (linkInfoMap == null) {
                 logger.warn("No link info available for day: {}", day);
                 return;
@@ -162,23 +151,6 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
             for (AccidentType accidentType : AccidentType.values()) {
                 logger.info("Accident Type: {}, Total Risk: {}", accidentType, totalRiskByAccidentType.get(accidentType));
             }
-
-
-
-            // check
-            /*
-            for (Id<Link> linkId : model.getAccidentsContext().getLinkId2info().keySet()) {
-                //((de.tum.bgu.msm.scenarios.health.HealthDataContainerImpl)dataContainer).getLinkInfoByDay().get(day).get(linkId).setLightCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getLightCasualityExposureByAccidentTypeByTime());
-                //((DataContainerHealth) dataContainer).getLinkInfo().get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
-
-                for(int hour =0; hour<24; hour++){
-                    double risk= ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime().get(AccidentType.PED).get(hour);
-                    logger.warn("risk = " + risk);
-                }
-
-            }
-
-             */
 
             model.getAccidentsContext().reset();
         }
