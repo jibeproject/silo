@@ -34,7 +34,7 @@ public class AccidentRateCalculationMEL {
         this.timeOfDayCoef = null;
     }
 
-    protected void run(Collection<? extends Link> links) {
+    public void run(Collection<? extends Link> links) {
         for (Link link : links){
             computeLinkAccidentFrequency(link);
         }

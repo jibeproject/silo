@@ -1,5 +1,7 @@
 package de.tum.bgu.msm.health;
 
+import de.tum.bgu.msm.health.accidentModel.AccidentCoefficientManager;
+import de.tum.bgu.msm.health.accidentModel.LinkDemandCalculator;
 import de.tum.bgu.msm.health.testutils.AccidentCoefficientTestDataGenerator;
 import de.tum.bgu.msm.health.testutils.NetworkTestDataGenerator;
 import de.tum.bgu.msm.health.testutils.TestPropertiesGenerator;

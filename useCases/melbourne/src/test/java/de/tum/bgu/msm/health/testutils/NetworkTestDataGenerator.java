@@ -21,10 +21,17 @@ public class NetworkTestDataGenerator {
         Network network = NetworkUtils.createNetwork();
         NetworkFactory factory = network.getFactory();
 
+        // First, create and add all nodes to the network
+        for (int i = 1; i <= linkCount * 2; i++) {
+            org.matsim.api.core.v01.Coord coord = new org.matsim.api.core.v01.Coord(i * 100.0, (i % 2) * 100.0);
+            network.addNode(factory.createNode(Id.createNodeId("node_" + i), coord));
+        }
+
+        // Then create links using the existing nodes
         for (int i = 1; i <= linkCount; i++) {
             Link link = factory.createLink(Id.createLinkId("link_" + i),
-                factory.createNode(Id.createNodeId("node_" + i), null),
-                factory.createNode(Id.createNodeId("node_" + (i + linkCount)), null));
+                network.getNodes().get(Id.createNodeId("node_" + i)),
+                network.getNodes().get(Id.createNodeId("node_" + (i + linkCount))));
 
             link.setLength(100.0 + i * 50);
             link.getAttributes().putAttribute("bike", (double) (i * 10));
@@ -45,11 +52,19 @@ public class NetworkTestDataGenerator {
         NetworkFactory factory = network.getFactory();
         Random random = new Random(42);
 
+        // First, create and add all nodes to the network
+        for (int i = 1; i <= linkCount * 2; i++) {
+            org.matsim.api.core.v01.Coord coord = new org.matsim.api.core.v01.Coord(
+                random.nextDouble() * 1000.0, random.nextDouble() * 1000.0);
+            network.addNode(factory.createNode(Id.createNodeId("node_" + i), coord));
+        }
+
+        // Then create links using the existing nodes
         for (int i = 1; i <= linkCount; i++) {
             Link link = factory.createLink(
                 Id.createLinkId("benchmark_link_" + i),
-                factory.createNode(Id.createNodeId("node_" + i), null),
-                factory.createNode(Id.createNodeId("node_" + (i + linkCount)), null)
+                network.getNodes().get(Id.createNodeId("node_" + i)),
+                network.getNodes().get(Id.createNodeId("node_" + (i + linkCount)))
             );
 
             link.setLength(50.0 + random.nextDouble() * 500.0);
@@ -77,11 +92,18 @@ public class NetworkTestDataGenerator {
         Network network = NetworkUtils.createNetwork();
         NetworkFactory factory = network.getFactory();
 
+        // First, create and add all nodes to the network
+        for (int i = 1; i <= linkCount * 2; i++) {
+            org.matsim.api.core.v01.Coord coord = new org.matsim.api.core.v01.Coord(i * 50.0, (i % 2) * 100.0);
+            network.addNode(factory.createNode(Id.createNodeId("mixed_node_" + i), coord));
+        }
+
+        // Then create links using the existing nodes
         for (int i = 1; i <= linkCount; i++) {
             Link link = factory.createLink(
                 Id.createLinkId("mixed_link_" + i),
-                factory.createNode(Id.createNodeId("mixed_node_" + i), null),
-                factory.createNode(Id.createNodeId("mixed_node_" + (i + linkCount)), null)
+                network.getNodes().get(Id.createNodeId("mixed_node_" + i)),
+                network.getNodes().get(Id.createNodeId("mixed_node_" + (i + linkCount)))
             );
 
             link.setLength(100.0);

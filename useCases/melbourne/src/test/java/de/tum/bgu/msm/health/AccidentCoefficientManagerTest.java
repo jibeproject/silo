@@ -1,5 +1,6 @@
 package de.tum.bgu.msm.health;
 
+import de.tum.bgu.msm.health.accidentModel.AccidentCoefficientManager;
 import de.tum.bgu.msm.health.testutils.AccidentCoefficientTestDataGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
