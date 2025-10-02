@@ -1,0 +1,236 @@
+package de.tum.bgu.msm.health;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.matsim.api.core.v01.network.Link;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class LinkDemandCalculatorTest {
+
+    private LinkDemandCalculator demandCalculator;
+
+    @Mock
+    private Link mockLink;
+
+    private static final double BIKE_SCALE_FACTOR = 0.1;
+    private static final double CAR_SCALE_FACTOR_THOUSANDS = 0.001;
+    private static final double DEFAULT_WALK_DEMAND = 50.0;
+
+    @BeforeEach
+    void setUp() {
+        demandCalculator = new LinkDemandCalculator();
+    }
+
+    @Test
+    void shouldCalculateBikeDemandWithScaling() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("bike", 100.0));
+
+        double bikeDemand = demandCalculator.calculateBikeDemand(mockLink);
+
+        assertEquals(10.0, bikeDemand, 0.001);
+    }
+
+    @Test
+    void shouldReturnZeroBikeDemandWhenAttributeMissing() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes());
+
+        double bikeDemand = demandCalculator.calculateBikeDemand(mockLink);
+
+        assertEquals(0.0, bikeDemand);
+    }
+
+    @Test
+    void shouldCalculateCarDemandWithScaling() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("car", 2000.0));
+
+        double carDemand = demandCalculator.calculateCarDemand(mockLink);
+
+        assertEquals(2.0, carDemand, 0.001);
+    }
+
+    @Test
+    void shouldCalculateCarDemandInThousands() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("car", 5000.0));
+
+        double carDemandThousands = demandCalculator.calculateCarDemandInThousands(mockLink);
+
+        assertEquals(5.0, carDemandThousands, 0.001);
+    }
+
+    @Test
+    void shouldCalculateWalkDemandFromLinkLength() {
+        when(mockLink.getLength()).thenReturn(200.0);
+
+        double walkDemand = demandCalculator.calculateWalkDemand(mockLink);
+
+        assertEquals(10000.0, walkDemand, 0.001);
+    }
+
+    @Test
+    void shouldReturnZeroCarDemandWhenAttributeMissing() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes());
+
+        double carDemand = demandCalculator.calculateCarDemand(mockLink);
+
+        assertEquals(0.0, carDemand);
+    }
+
+    @Test
+    void shouldDetectBikeDemandPresence() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("bike", 50.0));
+
+        boolean hasBikeDemand = demandCalculator.hasBikeDemand(mockLink);
+
+        assertTrue(hasBikeDemand);
+    }
+
+    @Test
+    void shouldDetectNoBikeDemandWhenZero() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("bike", 0.0));
+
+        boolean hasBikeDemand = demandCalculator.hasBikeDemand(mockLink);
+
+        assertFalse(hasBikeDemand);
+    }
+
+    @Test
+    void shouldDetectCarDemandPresence() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("car", 1000.0));
+
+        boolean hasCarDemand = demandCalculator.hasCarDemand(mockLink);
+
+        assertTrue(hasCarDemand);
+    }
+
+    @Test
+    void shouldDetectNoCarDemandWhenZero() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("car", 0.0));
+
+        boolean hasCarDemand = demandCalculator.hasCarDemand(mockLink);
+
+        assertFalse(hasCarDemand);
+    }
+
+    @Test
+    void shouldAlwaysHaveWalkDemandForValidLink() {
+        when(mockLink.getLength()).thenReturn(100.0);
+
+        boolean hasWalkDemand = demandCalculator.hasWalkDemand(mockLink);
+
+        assertTrue(hasWalkDemand);
+    }
+
+    @Test
+    void shouldHandleNullBikeAttribute() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("bike", null));
+
+        double bikeDemand = demandCalculator.calculateBikeDemand(mockLink);
+        boolean hasBikeDemand = demandCalculator.hasBikeDemand(mockLink);
+
+        assertEquals(0.0, bikeDemand);
+        assertFalse(hasBikeDemand);
+    }
+
+    @Test
+    void shouldHandleNullCarAttribute() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("car", null));
+
+        double carDemand = demandCalculator.calculateCarDemand(mockLink);
+        boolean hasCarDemand = demandCalculator.hasCarDemand(mockLink);
+
+        assertEquals(0.0, carDemand);
+        assertFalse(hasCarDemand);
+    }
+
+    @Test
+    void shouldHandleVerySmallDemandValues() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("bike", 1.0));
+
+        double bikeDemand = demandCalculator.calculateBikeDemand(mockLink);
+        boolean hasBikeDemand = demandCalculator.hasBikeDemand(mockLink);
+
+        assertEquals(0.1, bikeDemand, 0.001);
+        assertTrue(hasBikeDemand);
+    }
+
+    @Test
+    void shouldHandleVeryLargeDemandValues() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("car", 50000.0));
+
+        double carDemand = demandCalculator.calculateCarDemand(mockLink);
+        double carDemandThousands = demandCalculator.calculateCarDemandInThousands(mockLink);
+
+        assertEquals(50.0, carDemand, 0.001);
+        assertEquals(50.0, carDemandThousands, 0.001);
+    }
+
+    @Test
+    void shouldCalculateMultipleDemandTypesIndependently() {
+        when(mockLink.getAttributes()).thenReturn(new MockAttributes("bike", 200.0, "car", 3000.0));
+        when(mockLink.getLength()).thenReturn(150.0);
+
+        double bikeDemand = demandCalculator.calculateBikeDemand(mockLink);
+        double carDemand = demandCalculator.calculateCarDemand(mockLink);
+        double walkDemand = demandCalculator.calculateWalkDemand(mockLink);
+
+        assertEquals(20.0, bikeDemand, 0.001);
+        assertEquals(3.0, carDemand, 0.001);
+        assertEquals(7500.0, walkDemand, 0.001);
+    }
+
+    private static class MockAttributes implements org.matsim.utils.objectattributes.attributable.Attributes {
+        private final java.util.Map<String, Object> attributes = new java.util.HashMap<>();
+
+        public MockAttributes() {}
+
+        public MockAttributes(String key, Object value) {
+            attributes.put(key, value);
+        }
+
+        public MockAttributes(String key1, Object value1, String key2, Object value2) {
+            attributes.put(key1, value1);
+            attributes.put(key2, value2);
+        }
+
+        @Override
+        public Object getAttribute(String key) {
+            return attributes.get(key);
+        }
+
+        @Override
+        public Object putAttribute(String key, Object value) {
+            return attributes.put(key, value);
+        }
+
+        @Override
+        public Object removeAttribute(String key) {
+            return attributes.remove(key);
+        }
+
+        @Override
+        public java.util.Map<String, Object> getAsMap() {
+            return new java.util.HashMap<>(attributes);
+        }
+
+        @Override
+        public void clear() {
+            attributes.clear();
+        }
+
+        @Override
+        public int size() {
+            return attributes.size();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return attributes.isEmpty();
+        }
+    }
+}

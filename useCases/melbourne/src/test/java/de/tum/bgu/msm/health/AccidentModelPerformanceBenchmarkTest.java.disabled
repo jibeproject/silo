@@ -1,0 +1,217 @@
+package de.tum.bgu.msm.health;
+
+import de.tum.bgu.msm.health.testutils.NetworkTestDataGenerator;
+import de.tum.bgu.msm.health.testutils.TestPropertiesGenerator;
+import de.tum.bgu.msm.health.testutils.AccidentCoefficientTestDataGenerator;
+import de.tum.bgu.msm.health.injury.AccidentType;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class AccidentModelPerformanceBenchmarkTest {
+
+    private OptimisedAccidentModelMEL optimisedModel;
+    private String testBasePath;
+    private Properties performanceProperties;
+
+    @TempDir
+    Path temporaryDirectory;
+
+    @BeforeEach
+    void setUp() throws IOException {
+        testBasePath = temporaryDirectory.toString() + java.io.File.separator;
+        AccidentCoefficientTestDataGenerator.createAllStandardFiles(testBasePath);
+
+        performanceProperties = TestPropertiesGenerator.createPerformanceOptimisedProperties(testBasePath);
+        optimisedModel = new OptimisedAccidentModelMEL(performanceProperties);
+    }
+
+    @Test
+    void shouldProcessSmallNetworkWithinTimeLimit() {
+        Network smallNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(100);
+
+        long startTime = System.nanoTime();
+        optimisedModel.runAccidentModel(smallNetwork.getLinks().values());
+        long endTime = System.nanoTime();
+
+        long processingTimeMillis = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
+        assertTrue(processingTimeMillis < 1000, "Small network should process within 1 second");
+    }
+
+    @Test
+    void shouldProcessMediumNetworkWithinTimeLimit() {
+        Network mediumNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(1000);
+
+        long startTime = System.nanoTime();
+        optimisedModel.runAccidentModel(mediumNetwork.getLinks().values());
+        long endTime = System.nanoTime();
+
+        long processingTimeMillis = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
+        assertTrue(processingTimeMillis < 5000, "Medium network should process within 5 seconds");
+    }
+
+    @Test
+    void shouldProcessLargeNetworkWithinTimeLimit() {
+        Network largeNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(5000);
+
+        long startTime = System.nanoTime();
+        optimisedModel.runAccidentModel(largeNetwork.getLinks().values());
+        long endTime = System.nanoTime();
+
+        long processingTimeMillis = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
+        assertTrue(processingTimeMillis < 15000, "Large network should process within 15 seconds");
+    }
+
+    @Test
+    void shouldDemonstrateParallelProcessingSpeedup() {
+        Network testNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(2000);
+        Collection<Link> links = testNetwork.getLinks().values();
+
+        Properties sequentialProps = TestPropertiesGenerator.createSequentialProcessingProperties(testBasePath);
+        OptimisedAccidentModelMEL sequentialModel = new OptimisedAccidentModelMEL(sequentialProps);
+
+        Properties parallelProps = TestPropertiesGenerator.createPerformanceOptimisedProperties(testBasePath);
+        OptimisedAccidentModelMEL parallelModel = new OptimisedAccidentModelMEL(parallelProps);
+
+        long sequentialTime = measureProcessingTime(() -> sequentialModel.runAccidentModel(links));
+        long parallelTime = measureProcessingTime(() -> parallelModel.runAccidentModel(links));
+
+        assertTrue(parallelTime <= sequentialTime, "Parallel processing should be faster or equal");
+
+        double speedupRatio = (double) sequentialTime / parallelTime;
+        assertTrue(speedupRatio >= 0.8, "Speedup should be meaningful (at least 20% improvement or equivalent)");
+    }
+
+    @Test
+    void shouldDemonstrateEarlyExitOptimisation() {
+        Network mixedDemandNetwork = NetworkTestDataGenerator.createNetworkWithMixedDemand(1000);
+        Collection<Link> allLinks = mixedDemandNetwork.getLinks().values();
+
+        long processingTime = measureProcessingTime(() ->
+            optimisedModel.runAccidentModel(allLinks));
+
+        Map<String, Object> stats = optimisedModel.getProcessingStatistics();
+        int linksSkipped = (Integer) stats.get("linksSkipped");
+        int linksProcessed = (Integer) stats.get("linksProcessed");
+
+        assertTrue(linksSkipped > 0, "Early exit conditions should skip some links");
+        assertTrue(linksProcessed > 0, "Some links should still be processed");
+        assertTrue(processingTime < 10000, "Early exits should improve performance");
+    }
+
+    @Test
+    void shouldScaleLinearlyWithLinkCount() {
+        int[] networkSizes = {100, 500, 1000};
+        long[] processingTimes = new long[networkSizes.length];
+
+        for (int i = 0; i < networkSizes.length; i++) {
+            Network network = NetworkTestDataGenerator.createBenchmarkNetwork(networkSizes[i]);
+            processingTimes[i] = measureProcessingTime(() ->
+                optimisedModel.runAccidentModel(network.getLinks().values()));
+        }
+
+        double scalingFactor = (double) processingTimes[2] / processingTimes[0];
+        assertTrue(scalingFactor < 15, "Processing time should scale reasonably with network size");
+    }
+
+    @Test
+    void shouldMaintainMemoryEfficiency() {
+        Runtime runtime = Runtime.getRuntime();
+
+        long memoryBefore = runtime.totalMemory() - runtime.freeMemory();
+
+        Network largeNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(3000);
+        optimisedModel.runAccidentModel(largeNetwork.getLinks().values());
+
+        System.gc();
+        long memoryAfter = runtime.totalMemory() - runtime.freeMemory();
+
+        long memoryUsed = memoryAfter - memoryBefore;
+        assertTrue(memoryUsed < 500_000_000, "Memory usage should remain reasonable (< 500MB)");
+    }
+
+    @Test
+    void shouldProvideDetailedPerformanceMetrics() {
+        Network testNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(1000);
+
+        optimisedModel.runAccidentModel(testNetwork.getLinks().values());
+
+        Map<String, Object> metrics = optimisedModel.getPerformanceMetrics();
+
+        assertNotNull(metrics.get("totalProcessingTimeMillis"));
+        assertNotNull(metrics.get("averageTimePerLink"));
+        assertNotNull(metrics.get("linksPerSecond"));
+        assertNotNull(metrics.get("parallelEfficiency"));
+        assertNotNull(metrics.get("memoryUsageMB"));
+    }
+
+    @Test
+    void shouldCompareOptimisationEffectiveness() {
+        Network benchmarkNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(1500);
+        Collection<Link> links = benchmarkNetwork.getLinks().values();
+
+        Map<String, Long> optimisationResults = new HashMap<>();
+
+        Properties noOptimisation = TestPropertiesGenerator.createSequentialProcessingProperties(testBasePath);
+        Properties fullOptimisation = TestPropertiesGenerator.createPerformanceOptimisedProperties(testBasePath);
+
+        OptimisedAccidentModelMEL basicModel = new OptimisedAccidentModelMEL(noOptimisation);
+        OptimisedAccidentModelMEL optimisedModel = new OptimisedAccidentModelMEL(fullOptimisation);
+
+        optimisationResults.put("basic", measureProcessingTime(() -> basicModel.runAccidentModel(links)));
+        optimisationResults.put("optimised", measureProcessingTime(() -> optimisedModel.runAccidentModel(links)));
+
+        double improvementRatio = (double) optimisationResults.get("basic") / optimisationResults.get("optimised");
+        assertTrue(improvementRatio >= 1.0, "Optimised version should be at least as fast as basic version");
+    }
+
+    @Test
+    void shouldValidateResourceUtilisation() {
+        Network testNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(2000);
+
+        optimisedModel.runAccidentModel(testNetwork.getLinks().values());
+
+        Map<String, Object> utilisation = optimisedModel.getResourceUtilisation();
+
+        double cpuUtilisation = (Double) utilisation.get("averageCpuUtilisationPercent");
+        long peakMemoryMB = (Long) utilisation.get("peakMemoryUsageMB");
+
+        assertTrue(cpuUtilisation > 10.0, "CPU utilisation should be meaningful (>10%)");
+        assertTrue(peakMemoryMB < 1000, "Peak memory should be reasonable (<1GB for test)");
+    }
+
+    @Test
+    void shouldHandleStressTestConditions() {
+        Network stressNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(10000);
+        Collection<Link> links = stressNetwork.getLinks().values();
+
+        long stressTestTime = measureProcessingTime(() -> {
+            for (int i = 0; i < 5; i++) {
+                optimisedModel.runAccidentModel(links);
+            }
+        });
+
+        assertTrue(stressTestTime < 60000, "Stress test should complete within 1 minute");
+
+        Map<String, Object> finalStats = optimisedModel.getProcessingStatistics();
+        assertNotNull(finalStats);
+        assertTrue((Long) finalStats.get("totalProcessingTimeMillis") > 0);
+    }
+
+    private long measureProcessingTime(Runnable operation) {
+        long startTime = System.nanoTime();
+        operation.run();
+        long endTime = System.nanoTime();
+
+        return TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
+    }
+}

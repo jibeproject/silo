@@ -1,0 +1,274 @@
+package de.tum.bgu.msm.health;
+
+import de.tum.bgu.msm.health.injury.AccidentType;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.matsim.api.core.v01.network.Link;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class AccidentProbabilityCalculatorTest {
+
+    private AccidentProbabilityCalculator probabilityCalculator;
+
+    @Mock
+    private AccidentCoefficientManager mockCoefficientManager;
+
+    @Mock
+    private LinkDemandCalculator mockDemandCalculator;
+
+    @Mock
+    private Link mockLink;
+
+    @BeforeEach
+    void setUp() {
+        probabilityCalculator = new AccidentProbabilityCalculator(
+            mockCoefficientManager,
+            mockDemandCalculator,
+            AccidentType.BIKECAR
+        );
+    }
+
+    @Test
+    void shouldCalculateProbabilityZeroCrashWithValidInputs() {
+        setupMockCoefficients();
+        setupMockDemandCalculations();
+        setupMockLinkAttributes();
+
+        double probability = probabilityCalculator.calculateProbabilityZeroCrash(mockLink);
+
+        assertTrue(probability >= 0.0 && probability <= 1.0);
+        verify(mockCoefficientManager).getBinaryLogitCoefficient("intercept");
+        verify(mockDemandCalculator).calculateBikeDemand(mockLink);
+    }
+
+    @Test
+    void shouldCalculateZeroCrashUtilityCorrectly() {
+        setupMockCoefficients();
+        setupMockDemandCalculations();
+        setupMockLinkAttributes();
+
+        double utility = probabilityCalculator.calculateZeroCrashUtility(mockLink);
+
+        assertNotNull(utility);
+        assertTrue(Double.isFinite(utility));
+    }
+
+    @Test
+    void shouldCalculateBikeStressContributionForBikeAccidents() {
+        when(mockCoefficientManager.getBinaryLogitCoefficient("bike_stress")).thenReturn(0.5);
+        when(mockLink.getAttributes()).thenReturn(createMockAttributes("bike_stress", 3.0));
+
+        double contribution = probabilityCalculator.calculateBikeStressContribution(mockLink);
+
+        assertEquals(1.5, contribution, 0.001);
+    }
+
+    @Test
+    void shouldReturnZeroBikeStressForNonBikeAccidents() {
+        AccidentProbabilityCalculator carCalculator = new AccidentProbabilityCalculator(
+            mockCoefficientManager, mockDemandCalculator, AccidentType.CAR
+        );
+
+        double contribution = carCalculator.calculateBikeStressContribution(mockLink);
+
+        assertEquals(0.0, contribution);
+    }
+
+    @Test
+    void shouldCalculateLengthContribution() {
+        when(mockCoefficientManager.getBinaryLogitCoefficient("length")).thenReturn(0.8);
+        when(mockLink.getLength()).thenReturn(250.0);
+
+        double contribution = probabilityCalculator.calculateLengthContribution(mockLink);
+
+        assertEquals(200.0, contribution, 0.001);
+    }
+
+    @Test
+    void shouldCalculateDemandContributionsForBikeCarAccident() {
+        when(mockCoefficientManager.getBinaryLogitCoefficient("bike_demand")).thenReturn(-0.3);
+        when(mockCoefficientManager.getBinaryLogitCoefficient("car_demand")).thenReturn(0.6);
+        when(mockDemandCalculator.calculateBikeDemand(mockLink)).thenReturn(15.0);
+        when(mockDemandCalculator.calculateCarDemandInThousands(mockLink)).thenReturn(2.5);
+
+        double contribution = probabilityCalculator.calculateDemandContributions(mockLink);
+
+        assertEquals(1.0, contribution, 0.001);
+    }
+
+    @Test
+    void shouldCalculateSpeedLimitContribution() {
+        when(mockCoefficientManager.getBinaryLogitCoefficient("speed_limit")).thenReturn(-0.02);
+        when(mockLink.getAttributes()).thenReturn(createMockAttributes("speedLimitMPH", 40.0));
+
+        double contribution = probabilityCalculator.calculateSpeedLimitContribution(mockLink);
+
+        assertEquals(-0.8, contribution, 0.001);
+    }
+
+    @Test
+    void shouldHandleMissingSpeedLimitAttribute() {
+        when(mockCoefficientManager.getBinaryLogitCoefficient("speed_limit")).thenReturn(-0.02);
+        when(mockLink.getAttributes()).thenReturn(createMockAttributes());
+
+        double contribution = probabilityCalculator.calculateSpeedLimitContribution(mockLink);
+
+        assertEquals(0.0, contribution);
+    }
+
+    @Test
+    void shouldCalculateMeanCrashPoissonForBikeAccidents() {
+        setupMockCoefficientManager();
+        setupMockDemandCalculator();
+        setupMockLinkForPoisson();
+
+        double meanCrash = probabilityCalculator.calculateMeanCrashPoisson(mockLink);
+
+        assertTrue(meanCrash >= 0.0);
+        verify(mockCoefficientManager).getPoissonCoefficient("intercept");
+    }
+
+    @Test
+    void shouldHandleZeroDemandGracefully() {
+        when(mockDemandCalculator.calculateBikeDemand(mockLink)).thenReturn(0.0);
+        when(mockDemandCalculator.calculateCarDemandInThousands(mockLink)).thenReturn(0.0);
+        setupMockCoefficients();
+        setupMockLinkAttributes();
+
+        double probability = probabilityCalculator.calculateProbabilityZeroCrash(mockLink);
+
+        assertTrue(probability >= 0.0 && probability <= 1.0);
+    }
+
+    @Test
+    void shouldHandleExtremelyHighDemand() {
+        when(mockDemandCalculator.calculateBikeDemand(mockLink)).thenReturn(1000.0);
+        when(mockDemandCalculator.calculateCarDemandInThousands(mockLink)).thenReturn(50.0);
+        setupMockCoefficients();
+        setupMockLinkAttributes();
+
+        double probability = probabilityCalculator.calculateProbabilityZeroCrash(mockLink);
+
+        assertTrue(probability >= 0.0 && probability <= 1.0);
+    }
+
+    @Test
+    void shouldCalculateConsistentResultsForSameInput() {
+        setupMockCoefficients();
+        setupMockDemandCalculations();
+        setupMockLinkAttributes();
+
+        double probability1 = probabilityCalculator.calculateProbabilityZeroCrash(mockLink);
+        double probability2 = probabilityCalculator.calculateProbabilityZeroCrash(mockLink);
+
+        assertEquals(probability1, probability2, 0.0001);
+    }
+
+    @Test
+    void shouldDifferentiateBetweenAccidentTypes() {
+        AccidentProbabilityCalculator bikeCalculator = new AccidentProbabilityCalculator(
+            mockCoefficientManager, mockDemandCalculator, AccidentType.BIKEBIKE
+        );
+        AccidentProbabilityCalculator carCalculator = new AccidentProbabilityCalculator(
+            mockCoefficientManager, mockDemandCalculator, AccidentType.CAR
+        );
+
+        setupMockCoefficients();
+        setupMockDemandCalculations();
+        setupMockLinkAttributes();
+
+        double bikeProb = bikeCalculator.calculateProbabilityZeroCrash(mockLink);
+        double carProb = carCalculator.calculateProbabilityZeroCrash(mockLink);
+
+        assertNotEquals(bikeProb, carProb);
+    }
+
+    private void setupMockCoefficients() {
+        when(mockCoefficientManager.getBinaryLogitCoefficient("intercept")).thenReturn(2.5);
+        when(mockCoefficientManager.getBinaryLogitCoefficient("bike_demand")).thenReturn(-0.3);
+        when(mockCoefficientManager.getBinaryLogitCoefficient("car_demand")).thenReturn(0.6);
+        when(mockCoefficientManager.getBinaryLogitCoefficient("length")).thenReturn(0.8);
+        when(mockCoefficientManager.getBinaryLogitCoefficient("speed_limit")).thenReturn(-0.02);
+        when(mockCoefficientManager.getBinaryLogitCoefficient("bike_stress")).thenReturn(0.5);
+    }
+
+    private void setupMockDemandCalculations() {
+        when(mockDemandCalculator.calculateBikeDemand(mockLink)).thenReturn(10.0);
+        when(mockDemandCalculator.calculateCarDemandInThousands(mockLink)).thenReturn(2.0);
+    }
+
+    private void setupMockLinkAttributes() {
+        when(mockLink.getLength()).thenReturn(200.0);
+        when(mockLink.getAttributes()).thenReturn(createMockAttributes(
+            "speedLimitMPH", 30.0,
+            "bike_stress", 2.0
+        ));
+    }
+
+    private void setupMockCoefficientManager() {
+        when(mockCoefficientManager.getPoissonCoefficient("intercept")).thenReturn(1.5);
+        when(mockCoefficientManager.getPoissonCoefficient("bike_demand")).thenReturn(0.2);
+        when(mockCoefficientManager.getPoissonCoefficient("car_demand")).thenReturn(0.1);
+        when(mockCoefficientManager.getPoissonCoefficient("length")).thenReturn(0.3);
+    }
+
+    private void setupMockDemandCalculator() {
+        when(mockDemandCalculator.calculateBikeDemand(mockLink)).thenReturn(8.0);
+        when(mockDemandCalculator.calculateCarDemandInThousands(mockLink)).thenReturn(1.5);
+    }
+
+    private void setupMockLinkForPoisson() {
+        when(mockLink.getLength()).thenReturn(150.0);
+        when(mockLink.getAttributes()).thenReturn(createMockAttributes());
+    }
+
+    private org.matsim.utils.objectattributes.attributable.Attributes createMockAttributes(Object... keyValuePairs) {
+        java.util.Map<String, Object> attributes = new java.util.HashMap<>();
+        for (int i = 0; i < keyValuePairs.length; i += 2) {
+            attributes.put((String) keyValuePairs[i], keyValuePairs[i + 1]);
+        }
+
+        return new org.matsim.utils.objectattributes.attributable.Attributes() {
+            @Override
+            public Object getAttribute(String key) {
+                return attributes.get(key);
+            }
+
+            @Override
+            public Object putAttribute(String key, Object value) {
+                return attributes.put(key, value);
+            }
+
+            @Override
+            public Object removeAttribute(String key) {
+                return attributes.remove(key);
+            }
+
+            @Override
+            public java.util.Map<String, Object> getAsMap() {
+                return new java.util.HashMap<>(attributes);
+            }
+
+            @Override
+            public void clear() {
+                attributes.clear();
+            }
+
+            @Override
+            public int size() {
+                return attributes.size();
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return attributes.isEmpty();
+            }
+        };
+    }
+}

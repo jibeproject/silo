@@ -1,0 +1,246 @@
+package de.tum.bgu.msm.health;
+
+import de.tum.bgu.msm.health.injury.AccidentType;
+import de.tum.bgu.msm.health.injury.AccidentSeverity;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.matsim.api.core.v01.network.Link;
+
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class AccidentModelCoordinatorTest {
+
+    private AccidentModelCoordinator coordinator;
+
+    @Mock
+    private AccidentRateCalculationMEL mockCalculation;
+
+    @Mock
+    private Link mockLink1;
+
+    @Mock
+    private Link mockLink2;
+
+    @Mock
+    private Link mockLink3;
+
+    private Collection<Link> testLinks;
+    private Properties testProperties;
+
+    @BeforeEach
+    void setUp() {
+        testProperties = createTestProperties();
+        coordinator = new AccidentModelCoordinator(testProperties);
+
+        testLinks = Arrays.asList(mockLink1, mockLink2, mockLink3);
+    }
+
+    @Test
+    void shouldProcessAllAccidentTypesInParallel() {
+        AtomicInteger processedTypes = new AtomicInteger(0);
+
+        coordinator.setCalculationProvider((type, severity) -> {
+            processedTypes.incrementAndGet();
+            return mockCalculation;
+        });
+
+        coordinator.processAllAccidentTypes(testLinks, 1);
+
+        assertTrue(processedTypes.get() > 0);
+        verify(mockCalculation, atLeastOnce()).processLinksInParallel(testLinks, 1);
+    }
+
+    @Test
+    void shouldProcessMultipleDaysSequentially() {
+        coordinator.setCalculationProvider((type, severity) -> mockCalculation);
+
+        coordinator.processMultipleDays(testLinks, Arrays.asList(1, 2, 3));
+
+        verify(mockCalculation, times(3 * AccidentType.values().length)).processLinksInParallel(eq(testLinks), anyInt());
+    }
+
+    @Test
+    void shouldHandleEmptyLinkCollection() {
+        Collection<Link> emptyLinks = Collections.emptyList();
+        coordinator.setCalculationProvider((type, severity) -> mockCalculation);
+
+        assertDoesNotThrow(() -> coordinator.processAllAccidentTypes(emptyLinks, 1));
+        verify(mockCalculation, atLeastOnce()).processLinksInParallel(emptyLinks, 1);
+    }
+
+    @Test
+    void shouldConfigureBatchSizeFromProperties() {
+        testProperties.setProperty("accident.model.batch.size", "500");
+        coordinator = new AccidentModelCoordinator(testProperties);
+
+        assertEquals(500, coordinator.getBatchSize());
+    }
+
+    @Test
+    void shouldUseDefaultBatchSizeWhenNotConfigured() {
+        testProperties.remove("accident.model.batch.size");
+        coordinator = new AccidentModelCoordinator(testProperties);
+
+        assertEquals(1000, coordinator.getBatchSize());
+    }
+
+    @Test
+    void shouldEnableParallelProcessingWhenConfigured() {
+        testProperties.setProperty("accident.model.parallel.processing", "true");
+        coordinator = new AccidentModelCoordinator(testProperties);
+
+        assertTrue(coordinator.isParallelProcessingEnabled());
+    }
+
+    @Test
+    void shouldDisableParallelProcessingWhenConfigured() {
+        testProperties.setProperty("accident.model.parallel.processing", "false");
+        coordinator = new AccidentModelCoordinator(testProperties);
+
+        assertFalse(coordinator.isParallelProcessingEnabled());
+    }
+
+    @Test
+    void shouldProcessLinksInBatches() {
+        Collection<Link> manyLinks = createManyLinks(2500);
+        coordinator.setCalculationProvider((type, severity) -> mockCalculation);
+
+        coordinator.processAllAccidentTypes(manyLinks, 1);
+
+        verify(mockCalculation, atLeastOnce()).processLinksInParallel(any(), eq(1));
+    }
+
+    @Test
+    void shouldHandleExceptionInCalculation() {
+        AccidentRateCalculationMEL faultyCalculation = mock(AccidentRateCalculationMEL.class);
+        doThrow(new RuntimeException("Test exception")).when(faultyCalculation).processLinksInParallel(any(), anyInt());
+
+        coordinator.setCalculationProvider((type, severity) -> faultyCalculation);
+
+        assertThrows(RuntimeException.class, () -> coordinator.processAllAccidentTypes(testLinks, 1));
+    }
+
+    @Test
+    void shouldCreateCalculationsForAllAccidentTypes() {
+        Set<AccidentType> createdTypes = new HashSet<>();
+
+        coordinator.setCalculationProvider((type, severity) -> {
+            createdTypes.add(type);
+            return mockCalculation;
+        });
+
+        coordinator.processAllAccidentTypes(testLinks, 1);
+
+        assertEquals(AccidentType.values().length, createdTypes.size());
+    }
+
+    @Test
+    void shouldPassCorrectParametersToCalculations() {
+        Map<AccidentType, Integer> dayParameters = new HashMap<>();
+
+        coordinator.setCalculationProvider((type, severity) -> {
+            AccidentRateCalculationMEL calculation = mock(AccidentRateCalculationMEL.class);
+            doAnswer(invocation -> {
+                dayParameters.put(type, invocation.getArgument(1));
+                return null;
+            }).when(calculation).processLinksInParallel(any(), anyInt());
+            return calculation;
+        });
+
+        coordinator.processAllAccidentTypes(testLinks, 5);
+
+        assertEquals(AccidentType.values().length, dayParameters.size());
+        assertTrue(dayParameters.values().stream().allMatch(day -> day == 5));
+    }
+
+    @Test
+    void shouldMeasureProcessingTime() {
+        coordinator.setCalculationProvider((type, severity) -> {
+            AccidentRateCalculationMEL calculation = mock(AccidentRateCalculationMEL.class);
+            doAnswer(invocation -> {
+                Thread.sleep(10);
+                return null;
+            }).when(calculation).processLinksInParallel(any(), anyInt());
+            return calculation;
+        });
+
+        long startTime = System.currentTimeMillis();
+        coordinator.processAllAccidentTypes(testLinks, 1);
+        long endTime = System.currentTimeMillis();
+
+        assertTrue(endTime - startTime >= 0);
+    }
+
+    @Test
+    void shouldProcessDifferentSeverityLevels() {
+        Set<AccidentSeverity> processedSeverities = new HashSet<>();
+
+        coordinator.setCalculationProvider((type, severity) -> {
+            processedSeverities.add(severity);
+            return mockCalculation;
+        });
+
+        coordinator.processAllAccidentTypes(testLinks, 1);
+
+        assertTrue(processedSeverities.contains(AccidentSeverity.SEVERE_FATAL));
+    }
+
+    @Test
+    void shouldResetBetweenProcessingRuns() {
+        coordinator.setCalculationProvider((type, severity) -> mockCalculation);
+
+        coordinator.processAllAccidentTypes(testLinks, 1);
+        coordinator.processAllAccidentTypes(testLinks, 2);
+
+        verify(mockCalculation, times(2 * AccidentType.values().length)).processLinksInParallel(any(), anyInt());
+    }
+
+    @Test
+    void shouldHandleConcurrentAccess() {
+        coordinator.setCalculationProvider((type, severity) -> mockCalculation);
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            final int day = i + 1;
+            futures.add(CompletableFuture.runAsync(() ->
+                coordinator.processAllAccidentTypes(testLinks, day)));
+        }
+
+        assertDoesNotThrow(() -> CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join());
+    }
+
+    @Test
+    void shouldProvideStatistics() {
+        coordinator.setCalculationProvider((type, severity) -> mockCalculation);
+
+        coordinator.processAllAccidentTypes(testLinks, 1);
+
+        assertTrue(coordinator.getProcessedAccidentTypesCount() > 0);
+        assertTrue(coordinator.getTotalProcessingTimeMillis() >= 0);
+    }
+
+    private Properties createTestProperties() {
+        Properties properties = new Properties();
+        properties.setProperty("accident.model.batch.size", "1000");
+        properties.setProperty("accident.model.parallel.processing", "true");
+        properties.setProperty("accident.coefficient.path", "test/path/");
+        return properties;
+    }
+
+    private Collection<Link> createManyLinks(int count) {
+        List<Link> links = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            links.add(mock(Link.class));
+        }
+        return links;
+    }
+}

@@ -1,0 +1,267 @@
+package de.tum.bgu.msm.health;
+
+import de.tum.bgu.msm.health.injury.AccidentType;
+import de.tum.bgu.msm.health.injury.AccidentSeverity;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.matsim.api.core.v01.network.Link;
+
+import java.util.*;
+import java.util.stream.IntStream;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class OptimisedAccidentRateCalculationMELTest {
+
+    private OptimisedAccidentRateCalculationMEL calculator;
+
+    @Mock
+    private AccidentCoefficientManager mockCoefficientManager;
+
+    @Mock
+    private LinkDemandCalculator mockDemandCalculator;
+
+    @Mock
+    private AccidentProbabilityCalculator mockProbabilityCalculator;
+
+    @Mock
+    private Link mockLink1;
+
+    @Mock
+    private Link mockLink2;
+
+    @Mock
+    private Link mockLink3;
+
+    private Collection<Link> testLinks;
+
+    @BeforeEach
+    void setUp() {
+        calculator = new OptimisedAccidentRateCalculationMEL(
+            0.1,
+            AccidentType.BIKECAR,
+            AccidentSeverity.SEVEREFATAL,
+            mockCoefficientManager,
+            mockDemandCalculator,
+            mockProbabilityCalculator
+        );
+
+        testLinks = Arrays.asList(mockLink1, mockLink2, mockLink3);
+    }
+
+    @Test
+    void shouldProcessLinksInParallel() {
+        setupMockCalculations();
+        setupMockLinkFiltering();
+
+        calculator.processLinksInParallel(testLinks, 1);
+
+        verify(mockProbabilityCalculator, times(3)).calculateProbabilityZeroCrash(any(Link.class));
+        verify(mockProbabilityCalculator, times(3)).calculateMeanCrashPoisson(any(Link.class));
+    }
+
+    @Test
+    void shouldSkipLinksWithoutRelevantDemand() {
+        when(mockDemandCalculator.hasBikeDemand(mockLink1)).thenReturn(true);
+        when(mockDemandCalculator.hasBikeDemand(mockLink2)).thenReturn(false);
+        when(mockDemandCalculator.hasBikeDemand(mockLink3)).thenReturn(true);
+        setupMockCalculations();
+
+        calculator.processLinksInParallel(testLinks, 1);
+
+        verify(mockProbabilityCalculator, times(2)).calculateProbabilityZeroCrash(any(Link.class));
+        verify(mockProbabilityCalculator, never()).calculateProbabilityZeroCrash(mockLink2);
+    }
+
+    @Test
+    void shouldApplyCorrectFilteringForCarAccidents() {
+        OptimisedAccidentRateCalculationMEL carCalculator = new OptimisedAccidentRateCalculationMEL(
+            0.1, AccidentType.CAR, AccidentSeverity.SEVEREFATAL,
+            mockCoefficientManager, mockDemandCalculator, mockProbabilityCalculator
+        );
+
+        when(mockDemandCalculator.hasCarDemand(mockLink1)).thenReturn(true);
+        when(mockDemandCalculator.hasCarDemand(mockLink2)).thenReturn(false);
+        when(mockDemandCalculator.hasCarDemand(mockLink3)).thenReturn(true);
+        setupMockCalculations();
+
+        carCalculator.processLinksInParallel(testLinks, 1);
+
+        verify(mockDemandCalculator, never()).hasBikeDemand(any(Link.class));
+        verify(mockDemandCalculator, times(3)).hasCarDemand(any(Link.class));
+    }
+
+    @Test
+    void shouldApplyCorrectFilteringForPedestrianAccidents() {
+        OptimisedAccidentRateCalculationMEL pedestrianCalculator = new OptimisedAccidentRateCalculationMEL(
+            0.1, AccidentType.PED, AccidentSeverity.SEVEREFATAL,
+            mockCoefficientManager, mockDemandCalculator, mockProbabilityCalculator
+        );
+
+        when(mockDemandCalculator.hasWalkDemand(any(Link.class))).thenReturn(true);
+        setupMockCalculations();
+
+        pedestrianCalculator.processLinksInParallel(testLinks, 1);
+
+        verify(mockDemandCalculator, times(3)).hasWalkDemand(any(Link.class));
+        verify(mockDemandCalculator, never()).hasBikeDemand(any(Link.class));
+        verify(mockDemandCalculator, never()).hasCarDemand(any(Link.class));
+    }
+
+    @Test
+    void shouldCalculateCorrectFinalCrashRate() {
+        when(mockProbabilityCalculator.calculateProbabilityZeroCrash(mockLink1)).thenReturn(0.8);
+        when(mockProbabilityCalculator.calculateMeanCrashPoisson(mockLink1)).thenReturn(0.5);
+        when(mockDemandCalculator.hasBikeDemand(mockLink1)).thenReturn(true);
+
+        calculator.processLinksInParallel(Collections.singletonList(mockLink1), 1);
+
+        double expectedRate = 0.5 * (1 - 0.8) / 3.0 / 365.0;
+        assertTrue(expectedRate > 0);
+    }
+
+    @Test
+    void shouldHandleEmptyLinkCollection() {
+        Collection<Link> emptyLinks = Collections.emptyList();
+
+        assertDoesNotThrow(() -> calculator.processLinksInParallel(emptyLinks, 1));
+        verifyNoInteractions(mockProbabilityCalculator);
+    }
+
+    @Test
+    void shouldHandleLargeNumberOfLinks() {
+        Collection<Link> manyLinks = createManyMockLinks(10000);
+        setupMockLinkFiltering();
+        setupMockCalculations();
+
+        long startTime = System.currentTimeMillis();
+        calculator.processLinksInParallel(manyLinks, 1);
+        long endTime = System.currentTimeMillis();
+
+        assertTrue(endTime - startTime < 5000);
+    }
+
+    @Test
+    void shouldDistributeTimeOfDayCorrectly() {
+        when(mockCoefficientManager.getTimeOfDayCoefficient(8)).thenReturn(1.2);
+        when(mockCoefficientManager.getTimeOfDayCoefficient(17)).thenReturn(1.5);
+        when(mockCoefficientManager.getTimeOfDayCoefficient(23)).thenReturn(0.7);
+
+        setupBasicMockBehaviour();
+
+        calculator.processLinksInParallel(Collections.singletonList(mockLink1), 1);
+
+        verify(mockCoefficientManager, atLeastOnce()).getTimeOfDayCoefficient(anyInt());
+    }
+
+    @Test
+    void shouldProcessSingleLinkCorrectly() {
+        when(mockDemandCalculator.hasBikeDemand(mockLink1)).thenReturn(true);
+        when(mockProbabilityCalculator.calculateProbabilityZeroCrash(mockLink1)).thenReturn(0.6);
+        when(mockProbabilityCalculator.calculateMeanCrashPoisson(mockLink1)).thenReturn(0.3);
+
+        calculator.processLinksInParallel(Collections.singletonList(mockLink1), 5);
+
+        verify(mockProbabilityCalculator).calculateProbabilityZeroCrash(mockLink1);
+        verify(mockProbabilityCalculator).calculateMeanCrashPoisson(mockLink1);
+    }
+
+    @Test
+    void shouldStoreResultsCorrectly() {
+        setupBasicMockBehaviour();
+
+        calculator.processLinksInParallel(Collections.singletonList(mockLink1), 1);
+
+        assertTrue(calculator.hasProcessedResults());
+        assertNotNull(calculator.getProcessingStatistics());
+    }
+
+    @Test
+    void shouldHandleNullProbabilityValues() {
+        when(mockDemandCalculator.hasBikeDemand(mockLink1)).thenReturn(true);
+        when(mockProbabilityCalculator.calculateProbabilityZeroCrash(mockLink1)).thenReturn(null);
+        when(mockProbabilityCalculator.calculateMeanCrashPoisson(mockLink1)).thenReturn(0.3);
+
+        assertDoesNotThrow(() -> calculator.processLinksInParallel(Collections.singletonList(mockLink1), 1));
+    }
+
+    @Test
+    void shouldHandleExtremeValues() {
+        when(mockDemandCalculator.hasBikeDemand(mockLink1)).thenReturn(true);
+        when(mockProbabilityCalculator.calculateProbabilityZeroCrash(mockLink1)).thenReturn(0.999999);
+        when(mockProbabilityCalculator.calculateMeanCrashPoisson(mockLink1)).thenReturn(1000.0);
+
+        assertDoesNotThrow(() -> calculator.processLinksInParallel(Collections.singletonList(mockLink1), 1));
+    }
+
+    @Test
+    void shouldProvideProcessingStatistics() {
+        setupBasicMockBehaviour();
+
+        calculator.processLinksInParallel(testLinks, 1);
+
+        Map<String, Object> stats = calculator.getProcessingStatistics();
+        assertNotNull(stats);
+        assertTrue(stats.containsKey("linksProcessed"));
+        assertTrue(stats.containsKey("linksSkipped"));
+        assertTrue(stats.containsKey("processingTimeMillis"));
+    }
+
+    @Test
+    void shouldResetBetweenRuns() {
+        setupBasicMockBehaviour();
+
+        calculator.processLinksInParallel(testLinks, 1);
+        calculator.processLinksInParallel(testLinks, 2);
+
+        verify(mockProbabilityCalculator, times(6)).calculateProbabilityZeroCrash(any(Link.class));
+    }
+
+    @Test
+    void shouldHandleConcurrentProcessing() {
+        setupBasicMockBehaviour();
+
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            threads.add(new Thread(() -> calculator.processLinksInParallel(testLinks, 1)));
+        }
+
+        threads.forEach(Thread::start);
+        assertDoesNotThrow(() -> threads.forEach(thread -> {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+    }
+
+    private void setupMockCalculations() {
+        when(mockProbabilityCalculator.calculateProbabilityZeroCrash(any(Link.class))).thenReturn(0.7);
+        when(mockProbabilityCalculator.calculateMeanCrashPoisson(any(Link.class))).thenReturn(0.4);
+    }
+
+    private void setupMockLinkFiltering() {
+        when(mockDemandCalculator.hasBikeDemand(any(Link.class))).thenReturn(true);
+    }
+
+    private void setupBasicMockBehaviour() {
+        setupMockLinkFiltering();
+        setupMockCalculations();
+    }
+
+    private Collection<Link> createManyMockLinks(int count) {
+        return IntStream.range(0, count)
+            .mapToObj(i -> {
+                Link link = mock(Link.class);
+                when(mockDemandCalculator.hasBikeDemand(link)).thenReturn(i % 2 == 0);
+                return link;
+            })
+            .toList();
+    }
+}

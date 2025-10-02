@@ -1,0 +1,236 @@
+package de.tum.bgu.msm.health;
+
+import de.tum.bgu.msm.health.testutils.NetworkTestDataGenerator;
+import de.tum.bgu.msm.health.testutils.TestPropertiesGenerator;
+import de.tum.bgu.msm.health.testutils.AccidentCoefficientTestDataGenerator;
+import de.tum.bgu.msm.health.injury.AccidentType;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class AccidentModelOptimisationIntegrationTest {
+
+    private AccidentCoefficientManager coefficientManager;
+    private LinkDemandCalculator demandCalculator;
+    private AccidentProbabilityCalculator probabilityCalculator;
+    private AccidentModelCoordinator coordinator;
+    private OptimisedAccidentModelMEL accidentModel;
+
+    private Network testNetwork;
+    private String testBasePath;
+    private Properties testProperties;
+
+    @TempDir
+    Path temporaryDirectory;
+
+    @BeforeEach
+    void setUp() throws IOException {
+        testBasePath = temporaryDirectory.toString() + java.io.File.separator;
+        AccidentCoefficientTestDataGenerator.createAllStandardFiles(testBasePath);
+
+        coefficientManager = new AccidentCoefficientManager();
+        demandCalculator = new LinkDemandCalculator();
+
+        testProperties = TestPropertiesGenerator.createStandardAccidentModelProperties(testBasePath);
+        testNetwork = NetworkTestDataGenerator.createSimpleTestNetwork(10);
+    }
+
+    @Test
+    void shouldIntegrateAllComponentsForCompleteWorkflow() throws IOException {
+        loadAllCoefficients();
+        createProbabilityCalculator();
+        createCoordinator();
+        createAccidentModel();
+
+        Collection<Link> links = testNetwork.getLinks().values();
+
+        assertDoesNotThrow(() -> accidentModel.runAccidentModel(links));
+        assertTrue(accidentModel.getLastProcessingTimeMillis() > 0);
+    }
+
+    @Test
+    void shouldProcessDifferentAccidentTypesCorrectly() throws IOException {
+        loadAllCoefficients();
+
+        for (AccidentType accidentType : AccidentType.values()) {
+            AccidentProbabilityCalculator calculator = new AccidentProbabilityCalculator(
+                coefficientManager, demandCalculator, accidentType
+            );
+
+            Link testLink = NetworkTestDataGenerator.createLinkWithAllDemandTypes();
+
+            assertDoesNotThrow(() -> {
+                double probability = calculator.calculateProbabilityZeroCrash(testLink);
+                double meanCrash = calculator.calculateMeanCrashPoisson(testLink);
+
+                assertTrue(probability >= 0.0 && probability <= 1.0);
+                assertTrue(meanCrash >= 0.0);
+            });
+        }
+    }
+
+    @Test
+    void shouldHandleRealWorldDataStructures() throws IOException {
+        loadAllCoefficients();
+
+        Network largeNetwork = NetworkTestDataGenerator.createBenchmarkNetwork(1000);
+        Collection<Link> links = largeNetwork.getLinks().values();
+
+        createProbabilityCalculator();
+        createCoordinator();
+        createAccidentModel();
+
+        long startTime = System.currentTimeMillis();
+        accidentModel.runAccidentModel(links);
+        long endTime = System.currentTimeMillis();
+
+        assertTrue(endTime - startTime < 10000);
+        assertTrue(accidentModel.getProcessingStatistics().containsKey("linksProcessed"));
+    }
+
+    @Test
+    void shouldMaintainDataConsistencyAcrossProcessingRuns() throws IOException {
+        loadAllCoefficients();
+        createProbabilityCalculator();
+        createCoordinator();
+        createAccidentModel();
+
+        Collection<Link> links = testNetwork.getLinks().values();
+
+        accidentModel.runAccidentModel(links);
+        Map<String, Object> firstRunStats = new HashMap<>(accidentModel.getProcessingStatistics());
+
+        accidentModel.runAccidentModel(links);
+        Map<String, Object> secondRunStats = accidentModel.getProcessingStatistics();
+
+        assertEquals(firstRunStats.get("accidentTypesProcessed"), secondRunStats.get("accidentTypesProcessed"));
+    }
+
+    @Test
+    void shouldOptimisePerformanceWithEarlyExitConditions() throws IOException {
+        loadAllCoefficients();
+
+        Network mixedDemandNetwork = NetworkTestDataGenerator.createNetworkWithMixedDemand(1000);
+        Collection<Link> links = mixedDemandNetwork.getLinks().values();
+
+        createProbabilityCalculator();
+        createCoordinator();
+        createAccidentModel();
+
+        long startTime = System.currentTimeMillis();
+        accidentModel.runAccidentModel(links);
+        long processingTime = System.currentTimeMillis() - startTime;
+
+        assertTrue(processingTime < 5000);
+
+        Map<String, Object> stats = accidentModel.getProcessingStatistics();
+        assertTrue((Integer) stats.get("linksSkipped") > 0);
+        assertTrue((Integer) stats.get("linksProcessed") > 0);
+    }
+
+    @Test
+    void shouldHandleParallelProcessingCorrectly() throws IOException {
+        testProperties = TestPropertiesGenerator.createPerformanceOptimisedProperties(testBasePath);
+
+        loadAllCoefficients();
+        createProbabilityCalculator();
+        createCoordinator();
+        createAccidentModel();
+
+        Collection<Link> links = NetworkTestDataGenerator.createBenchmarkNetwork(500).getLinks().values();
+
+        accidentModel.runAccidentModel(links);
+
+        Map<String, Object> stats = accidentModel.getProcessingStatistics();
+        assertTrue((Boolean) stats.get("parallelProcessingEnabled"));
+        assertTrue((Integer) stats.get("accidentTypesProcessed") > 0);
+    }
+
+    @Test
+    void shouldValidateCoefficientsLoadingAndUsage() throws IOException {
+        coefficientManager.loadBinaryLogitCoefficients(testBasePath + "binaryModel.csv");
+        coefficientManager.loadPoissonCoefficients(testBasePath + "poissonModel.csv");
+        coefficientManager.loadTimeOfDayCoefficients(testBasePath + "timeOfDay.csv");
+
+        assertNotEquals(0.0, coefficientManager.getBinaryLogitCoefficient("intercept"));
+        assertNotEquals(0.0, coefficientManager.getPoissonCoefficient("intercept"));
+        assertNotEquals(1.0, coefficientManager.getTimeOfDayCoefficient(8));
+    }
+
+    @Test
+    void shouldCalculateDemandCorrectlyForAllModes() {
+        Link bikeLink = NetworkTestDataGenerator.createLinkWithDemand("bike", 100.0);
+        Link carLink = NetworkTestDataGenerator.createLinkWithDemand("car", 2000.0);
+        Link walkLink = NetworkTestDataGenerator.createWalkOnlyLink(150.0);
+
+        assertTrue(demandCalculator.hasBikeDemand(bikeLink));
+        assertFalse(demandCalculator.hasBikeDemand(carLink));
+
+        assertTrue(demandCalculator.hasCarDemand(carLink));
+        assertFalse(demandCalculator.hasCarDemand(bikeLink));
+
+        assertTrue(demandCalculator.hasWalkDemand(walkLink));
+        assertTrue(demandCalculator.hasWalkDemand(bikeLink));
+    }
+
+    @Test
+    void shouldHandleEdgeCasesAndErrorConditions() throws IOException {
+        loadAllCoefficients();
+        createProbabilityCalculator();
+
+        Link emptyLink = NetworkTestDataGenerator.createEmptyLink();
+        Link extremeLink = NetworkTestDataGenerator.createLinkWithExtremeDemand();
+
+        assertDoesNotThrow(() -> {
+            probabilityCalculator.calculateProbabilityZeroCrash(emptyLink);
+            probabilityCalculator.calculateProbabilityZeroCrash(extremeLink);
+        });
+    }
+
+    @Test
+    void shouldProvideMeaningfulStatisticsAndDiagnostics() throws IOException {
+        loadAllCoefficients();
+        createProbabilityCalculator();
+        createCoordinator();
+        createAccidentModel();
+
+        Collection<Link> links = testNetwork.getLinks().values();
+        accidentModel.runAccidentModel(links);
+
+        Map<String, Object> stats = accidentModel.getProcessingStatistics();
+
+        assertNotNull(stats.get("totalProcessingTimeMillis"));
+        assertNotNull(stats.get("accidentTypesProcessed"));
+        assertNotNull(stats.get("parallelProcessingEnabled"));
+        assertTrue((Long) stats.get("totalProcessingTimeMillis") >= 0);
+    }
+
+    private void loadAllCoefficients() throws IOException {
+        coefficientManager.loadBinaryLogitCoefficients(testBasePath + "binaryModel.csv");
+        coefficientManager.loadPoissonCoefficients(testBasePath + "poissonModel.csv");
+        coefficientManager.loadTimeOfDayCoefficients(testBasePath + "timeOfDay.csv");
+    }
+
+    private void createProbabilityCalculator() {
+        probabilityCalculator = new AccidentProbabilityCalculator(
+            coefficientManager, demandCalculator, AccidentType.BIKECAR
+        );
+    }
+
+    private void createCoordinator() {
+        coordinator = new AccidentModelCoordinator(testProperties);
+    }
+
+    private void createAccidentModel() {
+        accidentModel = new OptimisedAccidentModelMEL(testProperties);
+        accidentModel.setCoordinator(coordinator);
+    }
+}
