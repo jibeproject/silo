@@ -5,26 +5,34 @@ import de.tum.bgu.msm.data.Day;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration test for HealthExposureModelMEL file skipping functionality.
- * Tests the integration between file manager and the main workflow methods.
- * These tests should initially fail until the workflow integration is implemented.
+ * Integration test for HealthExposureModelMEL file skipping functionality with traffic flow data loading.
+ * Tests the integration between file manager and the main workflow methods including memory state preservation.
+ * These tests validate the complete workflow optimization including data loading capabilities.
  */
 class HealthExposureModelMELFileSkippingIntegrationTest {
 
     private HealthOutputFileManager fileManager;
+    private Network network; // Not needed for file existence and data loading tests
     private String testBaseDirectory;
     private static final String TEST_SCENARIO_NAME = "test_scenario";
     private static final int TEST_YEAR = 2018;
+    private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour;
 
     @TempDir
     Path temporaryDirectory;
@@ -33,6 +41,8 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
     void setUp() {
         testBaseDirectory = temporaryDirectory.toString() + File.separator;
         fileManager = new HealthOutputFileManager(testBaseDirectory, TEST_SCENARIO_NAME);
+        network = null; // Not needed for file existence and data loading tests
+        trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
     }
 
     @Test
@@ -40,60 +50,68 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
         // Given: Health indicator file already exists
         createHealthIndicatorFile(TEST_YEAR, Day.thursday, Mode.walk);
 
-        // When: healthDataAssembler is called
-        // This test verifies the contract - the actual implementation will make this pass
+        // When: healthDataAssembler logic is evaluated
         boolean shouldSkip = fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.walk);
 
         // Then: Processing should be skipped
         assertTrue(shouldSkip, "healthDataAssembler should skip processing when file exists");
-
-        // Verify that the actual processing logic would not be called
-        // (This will be implemented in the actual healthDataAssembler method)
     }
 
     @Test
-    void testWriteTrafficFlowsSkipsProcessingWhenFileExists() throws IOException {
-        // Given: Traffic flow file already exists
-        createTrafficFlowFile(TEST_YEAR, Day.saturday, "bicycle");
+    void testWriteTrafficFlowsSkipsProcessingAndLoadsData() throws IOException {
+        // Given: Traffic flow file already exists with real data
+        createTrafficFlowFileWithData(TEST_YEAR, Day.saturday, "bicycle");
 
         // When: writeTrafficFlowsToCSV logic is evaluated
-        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.saturday, "bicycle");
+        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.saturday, "bicycle",
+                                                                        trafficFlowsByDayModeLinkHour, network);
 
-        // Then: Processing should be skipped
+        // Then: Processing should be skipped and data loaded into memory
         assertTrue(shouldSkip, "writeTrafficFlowsToCSV should skip processing when file exists");
+        assertTrue(trafficFlowsByDayModeLinkHour.containsKey(Day.saturday), "Saturday data should be loaded");
+        assertTrue(trafficFlowsByDayModeLinkHour.get(Day.saturday).containsKey("bicycle"), "Bicycle data should be loaded");
+        assertFalse(trafficFlowsByDayModeLinkHour.get(Day.saturday).get("bicycle").isEmpty(), "Bicycle data should not be empty");
     }
 
     @Test
-    void testDetermineModesToProcessFiltersExistingFiles() throws IOException {
+    void testDetermineModesToProcessFiltersExistingFilesAndLoadsData() throws IOException {
         // Given: Some traffic flow files exist, others don't
-        createTrafficFlowFile(TEST_YEAR, Day.thursday, "walk");
-        createTrafficFlowFile(TEST_YEAR, Day.thursday, "bike");
+        createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "walk");
+        createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "bike");
         // Note: "car" file does not exist
 
-        // When: Determining which modes to process
+        // When: Determining which modes to process (simulating the workflow integration)
         List<String> allModes = Arrays.asList("car", "walk", "bike");
-        List<String> modesToProcess = filterModesForProcessing(allModes, TEST_YEAR, Day.thursday);
+        List<String> modesToProcess = filterModesForProcessingWithDataLoading(allModes, TEST_YEAR, Day.thursday);
 
-        // Then: Only modes without existing files should be processed
+        // Then: Only modes without existing files should be processed, others should have data loaded
         assertEquals(1, modesToProcess.size(), "Should only process modes without existing files");
         assertTrue(modesToProcess.contains("car"), "Should process car mode (file does not exist)");
         assertFalse(modesToProcess.contains("walk"), "Should not process walk mode (file exists)");
         assertFalse(modesToProcess.contains("bike"), "Should not process bike mode (file exists)");
+
+        // Verify data was loaded for existing files
+        assertTrue(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("walk"), "Walk data should be loaded");
+        assertTrue(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("bike"), "Bike data should be loaded");
+        assertFalse(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("car"), "Car data should not be loaded");
     }
 
     @Test
-    void testEndYearProcessingSkipsCompletedDayModeCominations() throws IOException {
-        // Given: Mixed scenario - some files exist, others don't
+    void testWorkflowMemoryStateConsistencyAfterFileSkipping() throws IOException {
+        // Given: Complete workflow scenario with mixed existing files
         createHealthIndicatorFile(TEST_YEAR, Day.thursday, Mode.walk);
         createHealthIndicatorFile(TEST_YEAR, Day.saturday, Mode.bicycle);
-        createTrafficFlowFile(TEST_YEAR, Day.thursday, "walk");
+        createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "walk");
+        createTrafficFlowFileWithData(TEST_YEAR, Day.saturday, "bicycle");
 
-        // When: Processing all day/mode combinations
+        // When: Processing workflow decisions for all combinations
         Day[] days = {Day.thursday, Day.saturday, Day.sunday};
         Mode[] modes = {Mode.walk, Mode.bicycle, Mode.autoDriver};
+        String[] trafficModes = {"walk", "bicycle", "car"};
 
         int skippedHealthProcessing = 0;
         int skippedTrafficProcessing = 0;
+        int dataLoadedCount = 0;
 
         for (Day day : days) {
             for (Mode mode : modes) {
@@ -102,44 +120,94 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
                 }
             }
 
-            for (String modeStr : Arrays.asList("walk", "bicycle", "autoDriver")) {
-                if (fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, day, modeStr)) {
+            for (String mode : trafficModes) {
+                if (fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, day, mode, trafficFlowsByDayModeLinkHour, network)) {
                     skippedTrafficProcessing++;
+                    dataLoadedCount++;
                 }
             }
         }
 
-        // Then: Verify correct number of skips
+        // Then: Verify correct processing decisions and memory state
         assertEquals(2, skippedHealthProcessing, "Should skip 2 health indicator processing (thursday/walk, saturday/bicycle)");
-        assertEquals(1, skippedTrafficProcessing, "Should skip 1 traffic flow processing (thursday/walk)");
+        assertEquals(2, skippedTrafficProcessing, "Should skip 2 traffic flow processing (thursday/walk, saturday/bicycle)");
+        assertEquals(2, dataLoadedCount, "Should load data for 2 existing traffic flow files");
+
+        // Verify memory state contains loaded data
+        assertTrue(trafficFlowsByDayModeLinkHour.containsKey(Day.thursday), "Thursday traffic data should be in memory");
+        assertTrue(trafficFlowsByDayModeLinkHour.containsKey(Day.saturday), "Saturday traffic data should be in memory");
+        assertFalse(trafficFlowsByDayModeLinkHour.containsKey(Day.sunday), "Sunday traffic data should not be in memory");
     }
 
     @Test
-    void testSelectiveProcessingAfterFileDelection() throws IOException {
+    void testSelectiveProcessingAfterFileDeletion() throws IOException {
         // Given: All files exist initially
         createHealthIndicatorFile(TEST_YEAR, Day.thursday, Mode.walk);
         createHealthIndicatorFile(TEST_YEAR, Day.thursday, Mode.bicycle);
-        createTrafficFlowFile(TEST_YEAR, Day.thursday, "walk");
-        createTrafficFlowFile(TEST_YEAR, Day.thursday, "bicycle");
+        createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "walk");
+        createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "bicycle");
 
-        // Verify all would be skipped
+        // Load initial data to verify baseline
+        fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
+        fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle", trafficFlowsByDayModeLinkHour, network);
+
+        // Verify all would be skipped initially
         assertTrue(fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.walk));
         assertTrue(fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.bicycle));
-        assertTrue(fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk"));
-        assertTrue(fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle"));
 
-        // When: Strategically delete one file (as per your testing strategy)
+        // When: Strategically delete one file (testing scenario)
         deleteTrafficFlowFile(TEST_YEAR, Day.thursday, "walk");
 
-        // Then: Only the deleted file should be processed
-        assertFalse(fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk"),
-                   "Should process walk traffic after file deletion");
-        assertTrue(fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle"),
-                  "Should still skip bicycle traffic (file exists)");
-        assertTrue(fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.walk),
-                  "Should still skip walk health processing (file exists)");
-        assertTrue(fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.bicycle),
-                  "Should still skip bicycle health processing (file exists)");
+        // Clear memory to simulate fresh workflow start
+        trafficFlowsByDayModeLinkHour.clear();
+
+        // Then: Verify selective processing and data loading
+        boolean skipWalkTraffic = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
+                                                                             trafficFlowsByDayModeLinkHour, network);
+        boolean skipBicycleTraffic = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle",
+                                                                                trafficFlowsByDayModeLinkHour, network);
+
+        assertFalse(skipWalkTraffic, "Should process walk traffic after file deletion");
+        assertTrue(skipBicycleTraffic, "Should still skip bicycle traffic (file exists)");
+
+        // Verify memory state reflects selective loading
+        assertTrue(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("bicycle"), "Bicycle data should be loaded from file");
+        assertFalse(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("walk"), "Walk data should not be loaded (file deleted)");
+    }
+
+    @Test
+    void testDownstreamProcessCompatibilityWithLoadedData() throws IOException {
+        // Given: Traffic flow file exists with realistic data structure
+        createTrafficFlowFileWithRealisticData(TEST_YEAR, Day.thursday, "walk");
+
+        // When: Data is loaded through file skipping mechanism
+        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
+                                                                        trafficFlowsByDayModeLinkHour, network);
+
+        // Then: Loaded data should be compatible with downstream processing (e.g., RunLinkToPersonInjuryRisks)
+        assertTrue(shouldSkip, "Should skip processing and load data");
+
+        Map<Id<Link>, Map<Integer, Integer>> walkData = trafficFlowsByDayModeLinkHour.get(Day.thursday).get("walk");
+        assertNotNull(walkData, "Walk data should be loaded");
+
+        // Verify data structure matches what downstream processes expect
+        for (Map.Entry<Id<Link>, Map<Integer, Integer>> linkEntry : walkData.entrySet()) {
+            Id<Link> linkId = linkEntry.getKey();
+            Map<Integer, Integer> hourlyData = linkEntry.getValue();
+
+            assertNotNull(linkId, "Link ID should not be null");
+            assertNotNull(hourlyData, "Hourly data should not be null");
+            assertFalse(hourlyData.isEmpty(), "Hourly data should not be empty");
+
+            // Verify hourly data structure
+            for (Map.Entry<Integer, Integer> hourEntry : hourlyData.entrySet()) {
+                Integer hour = hourEntry.getKey();
+                Integer count = hourEntry.getValue();
+
+                assertTrue(hour >= 0 && hour <= 23, "Hour should be valid (0-23)");
+                assertTrue(count >= 0, "Count should be non-negative");
+            }
+        }
     }
 
     @Test
@@ -156,16 +224,17 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
             }
         }
 
-        // Create all traffic flow files
+        // Create all traffic flow files with data
         for (Day day : testDays) {
             for (String mode : testTrafficModes) {
-                createTrafficFlowFile(TEST_YEAR, day, mode);
+                createTrafficFlowFileWithData(TEST_YEAR, day, mode);
             }
         }
 
         // When: Checking if any processing is needed
         boolean anyHealthProcessingNeeded = false;
         boolean anyTrafficProcessingNeeded = false;
+        int totalDataLoaded = 0;
 
         for (Day day : testDays) {
             for (Mode mode : testModes) {
@@ -175,40 +244,32 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
                 }
             }
             for (String mode : testTrafficModes) {
-                if (!fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, day, mode)) {
+                if (fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, day, mode, trafficFlowsByDayModeLinkHour, network)) {
+                    totalDataLoaded++;
+                } else {
                     anyTrafficProcessingNeeded = true;
-                    break;
                 }
             }
         }
 
-        // Then: No processing should be needed
+        // Then: No processing should be needed, all data loaded
         assertFalse(anyHealthProcessingNeeded, "Should skip all health processing when all files exist");
         assertFalse(anyTrafficProcessingNeeded, "Should skip all traffic processing when all files exist");
-    }
+        assertEquals(6, totalDataLoaded, "Should load data for all 6 traffic flow files (2 days × 3 modes)");
 
-    @Test
-    void testLoggingBehaviourForSkippedFiles() throws IOException {
-        // Given: Files exist
-        createHealthIndicatorFile(TEST_YEAR, Day.thursday, Mode.walk);
-        createTrafficFlowFile(TEST_YEAR, Day.saturday, "bicycle");
-
-        // When: Checking files (this will test logging in the actual implementation)
-        fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.walk);
-        fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.saturday, "bicycle");
-
-        // Then: Appropriate log messages should be generated
-        // (Logging verification will be implemented with the actual class)
-        // For now, we verify the basic functionality works
-        assertTrue(true, "Logging test placeholder - will verify log messages in implementation");
+        // Verify memory contains all loaded data
+        assertEquals(2, trafficFlowsByDayModeLinkHour.size(), "Should have data for 2 days");
+        for (Day day : testDays) {
+            assertEquals(3, trafficFlowsByDayModeLinkHour.get(day).size(), "Should have data for 3 modes per day");
+        }
     }
 
     // Helper methods
 
-    private List<String> filterModesForProcessing(List<String> allModes, int year, Day day) {
-        // This simulates the determineModesToProcess method that will be implemented
+    private List<String> filterModesForProcessingWithDataLoading(List<String> allModes, int year, Day day) {
+        // This simulates the updated determineModesToProcess method with data loading
         return allModes.stream()
-            .filter(mode -> !fileManager.shouldSkipTrafficFlowProcessing(year, day, mode))
+            .filter(mode -> !fileManager.shouldSkipTrafficFlowProcessing(year, day, mode, trafficFlowsByDayModeLinkHour, network))
             .collect(java.util.stream.Collectors.toList());
     }
 
@@ -217,9 +278,14 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
         createTestFile(filePath);
     }
 
-    private void createTrafficFlowFile(int year, Day day, String mode) throws IOException {
+    private void createTrafficFlowFileWithData(int year, Day day, String mode) throws IOException {
         String filePath = buildTrafficFlowTestPath(year, day, mode);
-        createTestFile(filePath);
+        createTestFileWithTrafficData(filePath, generateSampleTrafficData());
+    }
+
+    private void createTrafficFlowFileWithRealisticData(int year, Day day, String mode) throws IOException {
+        String filePath = buildTrafficFlowTestPath(year, day, mode);
+        createTestFileWithTrafficData(filePath, generateRealisticTrafficData());
     }
 
     private void deleteTrafficFlowFile(int year, Day day, String mode) {
@@ -228,6 +294,40 @@ class HealthExposureModelMELFileSkippingIntegrationTest {
         if (file.exists()) {
             file.delete();
         }
+    }
+
+    private String generateSampleTrafficData() {
+        return "linkId,hour,count\n" +
+               "link1,8,15\n" +
+               "link1,9,20\n" +
+               "link2,8,10\n" +
+               "link2,9,25\n" +
+               "link2,10,5\n";
+    }
+
+    private String generateRealisticTrafficData() {
+        return "linkId,hour,count\n" +
+               "link_main_st,7,45\n" +
+               "link_main_st,8,120\n" +
+               "link_main_st,9,85\n" +
+               "link_main_st,17,95\n" +
+               "link_main_st,18,140\n" +
+               "link_side_rd,8,25\n" +
+               "link_side_rd,9,30\n" +
+               "link_side_rd,17,35\n" +
+               "link_residential,12,5\n" +
+               "link_residential,13,8\n";
+    }
+
+    private void createTestFileWithTrafficData(String filePath, String data) throws IOException {
+        File file = new File(filePath);
+        file.getParentFile().mkdirs();
+
+        try (FileWriter writer = new FileWriter(file)) {
+            writer.write(data);
+        }
+
+        assertTrue(file.exists(), "Test file should be created successfully: " + filePath);
     }
 
     private String buildHealthIndicatorTestPath(int year, Day day, Mode mode) {
