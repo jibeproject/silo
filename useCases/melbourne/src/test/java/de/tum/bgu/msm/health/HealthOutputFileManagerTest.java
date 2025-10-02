@@ -58,24 +58,26 @@ class HealthOutputFileManagerTest {
         // Given: A traffic flow file exists with sample data
         createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "walk");
 
-        // When: Checking if processing should be skipped
-        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
-                                                                        trafficFlowsByDayModeLinkHour, network);
+        // When: Checking if file exists and loading data
+        boolean fileExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "walk");
+        if (fileExists) {
+            fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
+        }
 
-        // Then: Processing should be skipped
-        assertTrue(shouldSkip, "Should skip processing when traffic flow file exists");
+        // Then: File should exist and data should be loaded
+        assertTrue(fileExists, "Traffic flow file should exist");
+        assertTrue(trafficFlowsByDayModeLinkHour.containsKey(Day.thursday), "Thursday data should be loaded");
     }
 
     @Test
     void testShouldNotSkipTrafficFlowProcessingWhenFileDoesNotExist() {
         // Given: No traffic flow file exists (clean test environment)
 
-        // When: Checking if processing should be skipped
-        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
-                                                                        trafficFlowsByDayModeLinkHour, network);
+        // When: Checking if file exists
+        boolean fileExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "walk");
 
-        // Then: Processing should not be skipped
-        assertFalse(shouldSkip, "Should not skip processing when traffic flow file does not exist");
+        // Then: File should not exist
+        assertFalse(fileExists, "Traffic flow file should not exist");
     }
 
     @Test
@@ -83,12 +85,10 @@ class HealthOutputFileManagerTest {
         // Given: A traffic flow file exists with specific data
         createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "walk");
 
-        // When: Checking if processing should be skipped (which triggers data loading)
-        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
-                                                                        trafficFlowsByDayModeLinkHour, network);
+        // When: Loading data from existing file
+        fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
 
         // Then: Data should be loaded into memory
-        assertTrue(shouldSkip, "Should skip processing when file exists");
         assertTrue(trafficFlowsByDayModeLinkHour.containsKey(Day.thursday), "Thursday data should be loaded");
         assertTrue(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("walk"), "Walk mode data should be loaded");
 
@@ -110,22 +110,22 @@ class HealthOutputFileManagerTest {
         // Given: A health indicator file exists
         createHealthIndicatorFile(TEST_YEAR, Day.saturday, Mode.bicycle);
 
-        // When: Checking if processing should be skipped
-        boolean shouldSkip = fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.saturday, Mode.bicycle);
+        // When: Checking if file exists
+        boolean fileExists = fileManager.healthIndicatorFileExists(TEST_YEAR, Day.saturday, Mode.bicycle);
 
-        // Then: Processing should be skipped
-        assertTrue(shouldSkip, "Should skip processing when health indicator file exists");
+        // Then: File should exist
+        assertTrue(fileExists, "Health indicator file should exist");
     }
 
     @Test
     void testShouldNotSkipHealthIndicatorProcessingWhenFileDoesNotExist() {
         // Given: No health indicator file exists (clean test environment)
 
-        // When: Checking if processing should be skipped
-        boolean shouldSkip = fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.saturday, Mode.bicycle);
+        // When: Checking if file exists
+        boolean fileExists = fileManager.healthIndicatorFileExists(TEST_YEAR, Day.saturday, Mode.bicycle);
 
-        // Then: Processing should not be skipped
-        assertFalse(shouldSkip, "Should not skip processing when health indicator file does not exist");
+        // Then: File should not exist
+        assertFalse(fileExists, "Health indicator file should not exist");
     }
 
     @Test
@@ -135,18 +135,25 @@ class HealthOutputFileManagerTest {
         createTrafficFlowFileWithData(TEST_YEAR, Day.thursday, "bicycle");
         // Note: "car" file does not exist
 
-        // When: Checking each mode independently
-        boolean skipWalk = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
-                                                                      trafficFlowsByDayModeLinkHour, network);
-        boolean skipBicycle = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle",
-                                                                         trafficFlowsByDayModeLinkHour, network);
-        boolean skipCar = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "car",
-                                                                     trafficFlowsByDayModeLinkHour, network);
+        // When: Checking each mode independently and loading data
+        boolean walkExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "walk");
+        boolean bicycleExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "bicycle");
+        boolean carExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "car");
 
-        // Then: Only existing files should be skipped and data loaded
-        assertTrue(skipWalk, "Should skip walk processing (file exists)");
-        assertTrue(skipBicycle, "Should skip bicycle processing (file exists)");
-        assertFalse(skipCar, "Should not skip car processing (file does not exist)");
+        if (walkExists) {
+            fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
+        }
+        if (bicycleExists) {
+            fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "bicycle", trafficFlowsByDayModeLinkHour, network);
+        }
+        if (carExists) {
+            fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "car", trafficFlowsByDayModeLinkHour, network);
+        }
+
+        // Then: Only existing files should be found and data loaded
+        assertTrue(walkExists, "Walk file should exist");
+        assertTrue(bicycleExists, "Bicycle file should exist");
+        assertFalse(carExists, "Car file should not exist");
 
         // Verify data loaded for both existing modes
         Map<String, Map<Id<Link>, Map<Integer, Integer>>> thursdayData = trafficFlowsByDayModeLinkHour.get(Day.thursday);
@@ -164,12 +171,12 @@ class HealthOutputFileManagerTest {
         createHealthIndicatorFile(TEST_YEAR, Day.thursday, Mode.bicycle);
 
         // Load data for both modes
-        fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
-        fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle", trafficFlowsByDayModeLinkHour, network);
+        fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
+        fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "bicycle", trafficFlowsByDayModeLinkHour, network);
 
-        // Verify all would be skipped initially
-        assertTrue(fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.walk));
-        assertTrue(fileManager.shouldSkipHealthIndicatorProcessing(TEST_YEAR, Day.thursday, Mode.bicycle));
+        // Verify all files exist initially
+        assertTrue(fileManager.healthIndicatorFileExists(TEST_YEAR, Day.thursday, Mode.walk));
+        assertTrue(fileManager.healthIndicatorFileExists(TEST_YEAR, Day.thursday, Mode.bicycle));
 
         // When: Strategically delete one traffic flow file
         deleteTrafficFlowFile(TEST_YEAR, Day.thursday, "walk");
@@ -178,15 +185,16 @@ class HealthOutputFileManagerTest {
         trafficFlowsByDayModeLinkHour.clear();
 
         // Then: Only the deleted file should need processing, others should load from existing files
-        boolean skipWalkTraffic = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "walk",
-                                                                             trafficFlowsByDayModeLinkHour, network);
-        boolean skipBicycleTraffic = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.thursday, "bicycle",
-                                                                                trafficFlowsByDayModeLinkHour, network);
+        boolean walkExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "walk");
+        boolean bicycleExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.thursday, "bicycle");
 
-        assertFalse(skipWalkTraffic, "Should process walk traffic after file deletion");
-        assertTrue(skipBicycleTraffic, "Should still skip bicycle traffic (file exists)");
+        assertFalse(walkExists, "Walk file should not exist after deletion");
+        assertTrue(bicycleExists, "Bicycle file should still exist");
 
-        // Verify bicycle data was loaded but walk data is empty
+        // Load available data
+        fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.thursday, "bicycle", trafficFlowsByDayModeLinkHour, network);
+
+        // Verify bicycle data was loaded but walk data is not present
         assertTrue(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("bicycle"), "Bicycle data should be loaded from file");
         assertFalse(trafficFlowsByDayModeLinkHour.get(Day.thursday).containsKey("walk"), "Walk data should not be loaded (file deleted)");
     }
@@ -197,7 +205,7 @@ class HealthOutputFileManagerTest {
         createTrafficFlowFileWithComprehensiveData(TEST_YEAR, Day.saturday, "bicycle");
 
         // When: Loading data from file
-        fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.saturday, "bicycle", trafficFlowsByDayModeLinkHour, network);
+        fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.saturday, "bicycle", trafficFlowsByDayModeLinkHour, network);
 
         // Then: Data structure should be preserved exactly as expected by downstream processes
         Map<Id<Link>, Map<Integer, Integer>> bicycleData = trafficFlowsByDayModeLinkHour.get(Day.saturday).get("bicycle");
@@ -227,15 +235,15 @@ class HealthOutputFileManagerTest {
         createCorruptedTrafficFlowFile(TEST_YEAR, Day.sunday, "walk");
 
         // When: Attempting to load data from corrupted file
-        boolean shouldSkip = fileManager.shouldSkipTrafficFlowProcessing(TEST_YEAR, Day.sunday, "walk",
-                                                                        trafficFlowsByDayModeLinkHour, network);
+        boolean fileExists = fileManager.trafficFlowFileExists(TEST_YEAR, Day.sunday, "walk");
 
-        // Then: Should handle corruption gracefully and not skip processing
-        assertTrue(shouldSkip, "Should still indicate file exists but data may be incomplete");
+        // Then: File should exist but data loading should handle corruption gracefully
+        assertTrue(fileExists, "Corrupted file should still be detected as existing");
 
-        // Verify that some recovery mechanism is in place (data may be partially loaded or empty)
-        // The important thing is that it doesn't crash the workflow
-        assertTrue(true, "Corruption handling completed without exception");
+        // Loading should complete without throwing exceptions (graceful degradation)
+        assertDoesNotThrow(() -> {
+            fileManager.loadTrafficFlowDataIfExists(TEST_YEAR, Day.sunday, "walk", trafficFlowsByDayModeLinkHour, network);
+        }, "Corruption handling should not throw exceptions");
     }
 
     @Test
@@ -246,9 +254,9 @@ class HealthOutputFileManagerTest {
         createTrafficFlowFileWithData(2020, Day.sunday, "walk");
 
         // When: Loading data for different days
-        fileManager.shouldSkipTrafficFlowProcessing(2020, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
-        fileManager.shouldSkipTrafficFlowProcessing(2020, Day.saturday, "walk", trafficFlowsByDayModeLinkHour, network);
-        fileManager.shouldSkipTrafficFlowProcessing(2020, Day.sunday, "walk", trafficFlowsByDayModeLinkHour, network);
+        fileManager.loadTrafficFlowDataIfExists(2020, Day.thursday, "walk", trafficFlowsByDayModeLinkHour, network);
+        fileManager.loadTrafficFlowDataIfExists(2020, Day.saturday, "walk", trafficFlowsByDayModeLinkHour, network);
+        fileManager.loadTrafficFlowDataIfExists(2020, Day.sunday, "walk", trafficFlowsByDayModeLinkHour, network);
 
         // Then: Each day should maintain separate data
         assertTrue(trafficFlowsByDayModeLinkHour.containsKey(Day.thursday), "Thursday data should exist");
@@ -344,7 +352,14 @@ class HealthOutputFileManagerTest {
     private void createTestFile(String filePath) throws IOException {
         File file = new File(filePath);
         file.getParentFile().mkdirs();
-        file.createNewFile();
+
+        // Create file with some content so it's not empty (length > 0)
+        try (FileWriter writer = new FileWriter(file)) {
+            writer.write("test,data\n");
+            writer.write("sample,content\n");
+        }
+
         assertTrue(file.exists(), "Test file should be created: " + filePath);
+        assertTrue(file.length() > 0, "Test file should have content: " + filePath);
     }
 }

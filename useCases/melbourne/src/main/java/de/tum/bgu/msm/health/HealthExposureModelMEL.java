@@ -79,9 +79,13 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     // private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new HashMap<>();
     private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
 
+    // File manager for optimization - skips existing output files and loads data into memory
+    private final HealthOutputFileManager fileManager;
+
     public HealthExposureModelMEL(DataContainer dataContainer, Properties properties, Random random, Config config) {
         super(dataContainer, properties, random);
         this.initialMatsimConfig = config;
+        this.fileManager = new HealthOutputFileManager(properties.main.baseDirectory, properties.main.scenarioName);
         //simulatedDays = Arrays.asList(Day.sunday,Day.saturday,Day.thursday);
         //simulatedDays = Arrays.asList(Day.sunday);
         simulatedDays = Arrays.asList(Day.sunday, Day.saturday, Day.friday, Day.thursday, Day.wednesday, Day.tuesday, Day.monday);
@@ -160,35 +164,15 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         case bicycle:
                         case walk:
                         case pt:
-                            /*
-                            if(Day.thursday.equals(day)){ // trips during weekdays
-                                mitoTrips = mitoTripsAll.values().stream().
-                                        filter(trip -> trip.getTripMode().equals(mode) & weekdays.contains(trip.getDepartureDay())).
-                                        collect(Collectors.toMap(Trip::getId,trip -> trip));
-                            }else { // trips during weekends
-                                mitoTrips = mitoTripsAll.values().stream().
-                                        filter(trip -> trip.getTripMode().equals(mode) & trip.getDepartureDay().equals(day)).
-                                        collect(Collectors.toMap(Trip::getId,trip -> trip));
+                            if (fileManager.healthIndicatorFileExists(year, day, mode)) {
+                                logger.info("Skipping health data processing for day: {}, mode: {} - output file already exists", day, mode);
+                                break;
                             }
 
-                             */
                             // Filter trips for the specific day only
-
                             mitoTrips = mitoTripsAll.values().stream()
                                     .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
                                     .collect(Collectors.toMap(Trip::getId, trip -> trip));
-
-
-
-
-                            /*
-                            mitoTrips = mitoTripsAll.values().stream()
-                                    .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
-                                    .limit(10000) // Test with 10K trips
-                                    .collect(Collectors.toMap(Trip::getId, trip -> trip));
-
-                             */
-
 
                             healthDataAssembler(latestMatsimYear, dayForHealthData, mode);
                             final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName +"/" + year+"/" ;
@@ -481,6 +465,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 return Mode.bicycle;
             case "walk":
                 return Mode.walk;
+            case "pt":
+                return Mode.pt;
             default:
                 logger.warn("Unknown mode string: " + modeStr);
                 return null; // or throw an exception
@@ -515,12 +501,45 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void writeAndClearTrafficFlows(int year, Network network, Day day) {
-        for (String modeAdjusted : Set.of("car", "walk", "bike")) {
+        loadExistingTrafficFlowData(year, day, network);
+
+        List<String> modesToProcess = determineModesToProcess(year, day);
+
+        for (String modeAdjusted : modesToProcess) {
             writeTrafficFlowsToCSV(year, day, modeAdjusted, network);
             trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
         }
         trafficFlowsByDayModeLinkHour.remove(day); // Clear entire day
         System.gc();
+    }
+
+    /**
+     * Loads existing traffic flow data from CSV files into memory for downstream processes.
+     * This ensures that injury risk calculations have access to traffic flow data whether
+     * it comes from fresh processing or existing files.
+     */
+    private void loadExistingTrafficFlowData(int year, Day day, Network network) {
+        List<String> allModes = Arrays.asList("car", "walk", "bike");
+
+        for (String mode : allModes) {
+            fileManager.loadTrafficFlowDataIfExists(year, day, mode, trafficFlowsByDayModeLinkHour, network);
+        }
+    }
+
+    /**
+     * Determines which transport modes need traffic flow processing based on file existence.
+     */
+    private List<String> determineModesToProcess(int year, Day day) {
+        List<String> allModes = Arrays.asList("car", "walk", "bike");
+        List<String> modesToProcess = new ArrayList<>();
+
+        for (String mode : allModes) {
+            if (!fileManager.trafficFlowFileExists(year, day, mode)) {
+                modesToProcess.add(mode);
+            }
+        }
+
+        return modesToProcess;
     }
 
     private void writeTrafficFlowsToCSV(int year, Day day, String mode, Network network) {
@@ -1140,21 +1159,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             if(linkInfoByDay != null) {
                 // Injuries
-                // pathSevereInjuryRisk += linkSevereInjuryRisk - (pathSevereInjuryRisk * linkSevereInjuryRisk);
-                // pathFatalityRisk += linkFatalityRisk - (pathFatalityRisk * linkFatalityRisk);
-
-                //
                 if (weekdays.contains(trip.getDepartureDay())){
                     linkInjuryRisk = getLinkInjuryRisk(mode, (int) enterTimeInSecond, linkInfoByDay)/5;
                 } else {
                     linkInjuryRisk = getLinkInjuryRisk(mode, (int) enterTimeInSecond, linkInfoByDay);
                 }
 
-                //
-
                 double AgeGenderRR = 1.;
                 AgeGenderRR = getCasualtyRR_byAge_Gender(genderPerson, agePerson, trip.getTripMode());
-                //pathInjuryRisk *= (1 - linkInjuryRisk * AgeGenderRR);
                 pathInjuryRisk += (linkInjuryRisk * AgeGenderRR);
             }
 
@@ -1168,23 +1180,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         trip.updateMarginalMetHours(pathMarginalMetHours);
 
-        /*
-        trip.updateTravelRiskMap(Map.of(
-                "severeInjury", (float) pathSevereInjuryRisk,
-                "fatality", (float) pathFatalityRisk
-        ));
-
-         */
-
-        // Manchester
-        //pathInjuryRisk = 1- pathInjuryRisk;
-
-        /*
-        if(pathInjuryRisk > 1.){ // safe check
-            pathInjuryRisk = 1.;
-        }
-         */
-
         trip.updateTravelRiskMap(Map.of("severeFatalInjury", (float) 0));
 
         trip.updateTravelExposureMap(Map.of(
@@ -1197,36 +1192,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         PersonHealth siloPerson = ((PersonHealth)dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson()));
         siloPerson.updateWeeklyTravelSeconds((float) pathTime);
 
-        /*
-        siloPerson.updateWeeklyAccidentRisks(Map.of(
-                "severeInjury", (float) pathSevereInjuryRisk,
-                "fatality", (float) pathFatalityRisk));
-
-         */
-
-
         // Injuries
         ((PersonHealthMEL) siloPerson).addVisitedLinks(visitedLinksPath);
         visitedLinksPath.clear();
-        //logger.warn("Number of visited links is " + visitedLinksPath.size() + " to person " + siloPerson.getId() + " by mode " + mode);
-        // siloPerson.updateWeeklyAccidentRisks(Map.of("severeFatalInjury", (float) pathInjuryRisk));
-
-        /*
-        switch(mode){
-            case autoDriver:
-            case autoPassenger:
-                siloPerson.updateWeeklyAccidentRisks(Map.of("severeFatalInjuryCar", (float) pathInjuryRisk));
-                break;
-            case bicycle:
-                siloPerson.updateWeeklyAccidentRisks(Map.of("severeFatalInjuryBike", (float) pathInjuryRisk));
-                break;
-            case walk:
-                siloPerson.updateWeeklyAccidentRisks(Map.of("severeFatalInjuryWalk", (float) pathInjuryRisk));
-                break;
-            default:
-                throw new RuntimeException("Undefined mode " + mode);
-        }
-         */
 
         siloPerson.updateWeeklyMarginalMetHours(trip.getTripMode(), (float) pathMarginalMetHours);
         siloPerson.updateWeeklyPollutionExposuresByHour(Map.of(
@@ -1833,7 +1801,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             }
 
-            ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
+            ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
             System.gc();
         }
 
@@ -1854,7 +1822,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 int dayHour = weekHour % 24;
 
                 double min_ventilation_rate = 0.;
-                if (dayHour <= 7  || dayHour > 23 ){
+                if (dayHour <= 7){
                     //"minimum"  ventilation rate = 0.27 (v_sleep)
                     min_ventilation_rate = 0.27;
                 } else {
@@ -1862,14 +1830,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     min_ventilation_rate = 0.61;
                 }
 
-                sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/min_ventilation_rate;
-                sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/min_ventilation_rate;
+                sumExposurePM25_normalized += (float) (weeklyPollutionExposures.get("pm2.5")[weekHour]/min_ventilation_rate);
+                sumExposureNo2_normalized += (float) (weeklyPollutionExposures.get("no2")[weekHour]/min_ventilation_rate);
 
 
                 float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]));
                 sumExposureNoise += hourlyNoiseLevel;
 
-                if (dayHour <= 7  || dayHour > 23 ){
+                if (dayHour <= 7){
                     sumExposureNoiseNight += hourlyNoiseLevel;
                 }
             }
