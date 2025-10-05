@@ -609,56 +609,41 @@ public class AccidentRateModelOsmMEL {
     /**
      * Load casualty data from existing CSV files into the accident context.
      * Missing links in the files will simply have zero casualties in the current network.
-     *
-     * @param hourlyCasualtyRatesFile Path to the hourly casualty rates CSV file
      */
     private void loadCasualtyDataFromFiles(String hourlyCasualtyRatesFile) {
+        long startTime = System.currentTimeMillis();
         log.info("Loading casualty data from file: {}", hourlyCasualtyRatesFile);
 
         int loadedRecords = 0;
         int skippedRecords = 0;
 
-        try (java.util.Scanner scanner = new java.util.Scanner(new File(hourlyCasualtyRatesFile))) {
-            // Skip header line
-            if (scanner.hasNextLine()) {
-                scanner.nextLine(); // osmId,linkId,accidentType,hour,casualty
-            }
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(hourlyCasualtyRatesFile), 1024 * 1024)) {
 
-            while (scanner.hasNextLine()) {
-                String line = scanner.nextLine().trim();
+            String line = reader.readLine(); // Skip header
+            java.util.List<CasualtyRecord> batch = new java.util.ArrayList<>(10000);
+
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
                 if (line.isEmpty()) continue;
 
-                String[] parts = line.split(",");
-                if (parts.length != 5) {
-                    skippedRecords++;
-                    continue;
-                }
+                CasualtyRecord record = parseCasualtyLine(line);
+                if (record != null) {
+                    batch.add(record);
 
-                try {
-                    // Parse CSV fields: osmId,linkId,accidentType,hour,casualty
-                    Id<Link> linkId = Id.createLinkId(parts[1]);
-                    AccidentType accidentType = AccidentType.valueOf(parts[2]);
-                    int hour = Integer.parseInt(parts[3]);
-                    double casualty = Double.parseDouble(parts[4]);
-
-                    // Only load data for links that exist in current network
-                    AccidentLinkInfo linkInfo = accidentsContext.getLinkId2info().get(linkId);
-                    if (linkInfo != null) {
-                        // Get or create hourly casualty map for this accident type - use correct method name
-                        OpenIntFloatHashMap hourlyMap = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime()
-                                .computeIfAbsent(accidentType, k -> new OpenIntFloatHashMap());
-
-                        // Set the casualty value for this hour
-                        hourlyMap.put(hour, (float) casualty);
-                        loadedRecords++;
-                    } else {
-                        // Link from file doesn't exist in current network - skip silently
-                        skippedRecords++;
+                    if (batch.size() >= 10000) {
+                        int[] batchResults = processCasualtyBatch(batch);
+                        loadedRecords += batchResults[0];
+                        skippedRecords += batchResults[1];
+                        batch.clear();
                     }
-
-                } catch (Exception e) {
-                    skippedRecords++;
                 }
+            }
+
+            if (!batch.isEmpty()) {
+                int[] batchResults = processCasualtyBatch(batch);
+                loadedRecords += batchResults[0];
+                skippedRecords += batchResults[1];
             }
 
         } catch (Exception e) {
@@ -666,34 +651,52 @@ public class AccidentRateModelOsmMEL {
             throw new RuntimeException("Failed to load casualty data from files", e);
         }
 
-        log.info("Loaded {} casualty records, skipped {} records not in current network",
-                loadedRecords, skippedRecords);
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("Loaded {} casualty records, skipped {} records in {} ms",
+                loadedRecords, skippedRecords, elapsed);
     }
 
-    /**
-     * Initialize OSM links structure for file loading without requiring event handlers.
-     * This creates a simplified version that focuses on network structure rather than traffic data.
-     */
-    private void initializeOsmLinksForFileLoading() {
-        log.info("Initializing OSM links structure for file loading...");
+    private CasualtyRecord parseCasualtyLine(String line) {
+        try {
+            String[] parts = line.split(",");
+            if (parts.length != 5) return null;
 
-        // Create a simplified OSM links structure without traffic demand data
-        Map<Integer, Set<Link>> linksByOsmId = scenario.getNetwork().getLinks().values().stream()
-                .collect(Collectors.groupingBy(
-                        link -> getOsmId(link),
-                        Collectors.toSet()
-                ));
+            return new CasualtyRecord(
+                    Id.createLinkId(parts[1]),
+                    AccidentType.valueOf(parts[2]),
+                    Integer.parseInt(parts[3]),
+                    Float.parseFloat(parts[4])
+            );
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
-        osmLinks = linksByOsmId.entrySet().stream()
-                .map(entry -> {
-                    OsmLink osmLink = new OsmLink(entry.getKey(), entry.getValue());
-                    osmLink.computeAttributes();
-                    // Skip demand computation since we don't have event handlers in file-loading mode
-                    return osmLink;
-                })
-                .collect(Collectors.toList());
+    private int[] processCasualtyBatch(java.util.List<CasualtyRecord> batch) {
+        int loaded = 0;
+        int skipped = 0;
 
-        log.info("OSM links structure initialized for file loading: {} OsmLinks created.", osmLinks.size());
+        java.util.Map<Id<Link>, java.util.List<CasualtyRecord>> recordsByLink = batch.stream()
+                .collect(java.util.stream.Collectors.groupingBy(CasualtyRecord::getLinkId));
+
+        for (java.util.Map.Entry<Id<Link>, java.util.List<CasualtyRecord>> entry : recordsByLink.entrySet()) {
+            Id<Link> linkId = entry.getKey();
+            java.util.List<CasualtyRecord> linkRecords = entry.getValue();
+
+            AccidentLinkInfo linkInfo = accidentsContext.getLinkId2info().get(linkId);
+            if (linkInfo != null) {
+                for (CasualtyRecord record : linkRecords) {
+                    OpenIntFloatHashMap hourlyMap = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime()
+                            .computeIfAbsent(record.getAccidentType(), k -> new OpenIntFloatHashMap());
+                    hourlyMap.put(record.getHour(), record.getCasualty());
+                    loaded++;
+                }
+            } else {
+                skipped += linkRecords.size();
+            }
+        }
+
+        return new int[]{loaded, skipped};
     }
 
     // Subclass for motorized events
@@ -732,5 +735,31 @@ public class AccidentRateModelOsmMEL {
                 }
             }
         }
+    }
+
+    /**
+     * Initialize OSM links structure for file loading without requiring event handlers.
+     * This creates a simplified version that focuses on network structure rather than traffic data.
+     */
+    private void initializeOsmLinksForFileLoading() {
+        log.info("Initializing OSM links structure for file loading...");
+
+        // Create a simplified OSM links structure without traffic demand data
+        Map<Integer, Set<Link>> linksByOsmId = scenario.getNetwork().getLinks().values().stream()
+                .collect(Collectors.groupingBy(
+                        link -> getOsmId(link),
+                        Collectors.toSet()
+                ));
+
+        osmLinks = linksByOsmId.entrySet().stream()
+                .map(entry -> {
+                    OsmLink osmLink = new OsmLink(entry.getKey(), entry.getValue());
+                    osmLink.computeAttributes();
+                    // Skip demand computation since we don't have event handlers in file-loading mode
+                    return osmLink;
+                })
+                .collect(Collectors.toList());
+
+        log.info("OSM links structure initialized for file loading: {} OsmLinks created.", osmLinks.size());
     }
 }
