@@ -699,6 +699,36 @@ public class AccidentRateModelOsmMEL {
         return new int[]{loaded, skipped};
     }
 
+    private static class CasualtyRecord {
+        private final Id<Link> linkId;
+        private final AccidentType accidentType;
+        private final int hour;
+        private final float casualty;
+
+        public CasualtyRecord(Id<Link> linkId, AccidentType accidentType, int hour, float casualty) {
+            this.linkId = linkId;
+            this.accidentType = accidentType;
+            this.hour = hour;
+            this.casualty = casualty;
+        }
+
+        public Id<Link> getLinkId() {
+            return linkId;
+        }
+
+        public AccidentType getAccidentType() {
+            return accidentType;
+        }
+
+        public int getHour() {
+            return hour;
+        }
+
+        public float getCasualty() {
+            return casualty;
+        }
+    }
+
     // Subclass for motorized events
     static class AnalysisEventHandlerMotorized extends AnalysisEventHandler2 {
         public AnalysisEventHandlerMotorized(Vehicles vehicles, Scenario scenario) {
