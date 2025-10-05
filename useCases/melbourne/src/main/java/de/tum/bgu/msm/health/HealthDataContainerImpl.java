@@ -26,6 +26,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
 import org.matsim.contrib.emissions.Pollutant;
 
 import java.util.*;
@@ -35,6 +36,7 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
 
     private final DataContainerWithSchools delegate;
     private final Properties properties;
+    private Network network;
     private Map<Id<Link>, LinkInfo> linkInfo = new HashMap<>();
     private Map<Day, Map<Id<Link>, LinkInfo>> linkInfoByDay = new HashMap<>();
     private Map<String, ActivityLocation> activityLocationInfo = new HashMap<>();
@@ -270,5 +272,13 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
         StringBuilder key = new StringBuilder();
         key.append(age).append("|").append(gender.name().toLowerCase()).append("|").append(location);
         return key.toString();
+    }
+
+    public void setNetwork(Network network) {
+        this.network = network;
+    }
+
+    public Network getNetwork() {
+        return network;
     }
 }

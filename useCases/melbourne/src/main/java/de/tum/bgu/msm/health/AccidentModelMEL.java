@@ -80,19 +80,19 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
     }
 
     private void runAccidentRateModel(int year) {
-        logger.info("Initializing shared network and scenario for year: " + year);
+        logger.info("Initializing shared scenario for year: " + year);
 
-        // Create shared scenario and load network once
+        Network network = ((HealthDataContainerImpl) dataContainer).getNetwork();
+        if (network == null) {
+            throw new RuntimeException("Network not found in dataContainer. Ensure DataBuilderHealth has loaded the network.");
+        }
+
+        // Create shared scenario with the pre-loaded network
         Config config = ConfigUtils.createConfig();
         config.controller().setRunId(String.valueOf(latestMatsimYear));
         final MutableScenario sharedScenario = ScenarioUtils.createMutableScenario(config);
         sharedScenario.getConfig().travelTimeCalculator().setTraveltimeBinSize(3600);
-
-        // Load network once - it's the same for all days
-        java.util.Properties props = uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMitoBaseProperties();
-        String networkFile = props.getProperty("MATSIM_NETWORK", "input/mito/trafficAssignment/network.xml");
-        new org.matsim.core.network.io.MatsimNetworkReader(sharedScenario.getNetwork()).readFile(networkFile);
-        logger.info("Shared network loaded with {} links for all days", sharedScenario.getNetwork().getLinks().size());
+        sharedScenario.setNetwork(network);
 
         float scalingFactor = 0.1f; // todo: temporary fix
         sharedScenario.addScenarioElement("accidentModelFile", properties.main.baseDirectory + "input/accident/");

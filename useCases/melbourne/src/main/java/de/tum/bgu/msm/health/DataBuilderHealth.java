@@ -134,7 +134,7 @@ public class DataBuilderHealth {
         new PoiReader(dataContainer).readData(properties.main.baseDirectory + properties.geo.poiFileName);
 
         Network network = NetworkUtils.readNetwork(config.network().getInputFile());
-
+        dataContainer.setNetwork(network);
         setLinkInfoMaps(dataContainer, network);
 
         new PtSkimsReaderMEL(dataContainer).read();
