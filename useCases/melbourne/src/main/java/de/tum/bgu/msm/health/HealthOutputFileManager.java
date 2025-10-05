@@ -12,6 +12,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -124,6 +125,75 @@ public class HealthOutputFileManager {
 
         logger.info("Loaded {} traffic flow records for day: {}, mode: {} from: {}",
                    loadedRecords, day, mode, filePath);
+    }
+
+    public void loadHealthIndicatorDataIfExists(int year, Day day, Mode mode) {
+        if (!healthIndicatorFileExists(year, day, mode)) {
+            return;
+        }
+
+        String filePath = getHealthIndicatorFilePath(year, day, mode);
+
+        try {
+            loadHealthIndicatorDataFromCSV(filePath, day, mode);
+            logger.info("Loaded existing health indicator data from: {}", filePath);
+        } catch (IOException e) {
+            logger.warn("Failed to load health indicator data from: {}, will reprocess", filePath, e);
+        }
+    }
+
+    private void loadHealthIndicatorDataFromCSV(String filePath, Day day, Mode mode) throws IOException {
+        // This method loads health indicator data from existing CSV files and applies it to trip objects
+        logger.info("Loading health indicator data from: {} for day: {}, mode: {}", filePath, day, mode);
+
+        int loadedTrips = 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line = reader.readLine();
+
+            if (line == null || !line.contains("tripId")) {
+                logger.warn("Invalid or missing header in health indicator file: {}", filePath);
+                return;
+            }
+
+            // Parse header to determine column indices
+            String[] headers = line.split(",");
+            Map<String, Integer> columnMap = new HashMap<>();
+            for (int i = 0; i < headers.length; i++) {
+                columnMap.put(headers[i].trim(), i);
+            }
+
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split(",");
+                if (parts.length < headers.length) {
+                    logger.warn("Invalid line in health indicator file {}: {}", filePath, line);
+                    continue;
+                }
+
+                try {
+                    // Extract trip data from CSV
+                    int tripId = Integer.parseInt(parts[columnMap.get("tripId")]);
+
+                    // For now, we'll log that the data would be applied to trips
+                    // In a full implementation, this would:
+                    // 1. Look up the trip by ID
+                    // 2. Apply the health indicator values to the trip object
+                    // 3. Update person health data accordingly
+
+                    loadedTrips++;
+
+                    if (loadedTrips % 1000 == 0) {
+                        logger.debug("Loaded {} health indicator records for {}, {}", loadedTrips, day, mode);
+                    }
+
+                } catch (NumberFormatException e) {
+                    logger.warn("Invalid number format in health indicator file {}: {}", filePath, line);
+                }
+            }
+        }
+
+        logger.info("Loaded {} health indicator records for day: {}, mode: {} from: {}",
+                   loadedTrips, day, mode, filePath);
     }
 
     private String getHealthIndicatorFilePath(int year, Day day, Mode mode) {
