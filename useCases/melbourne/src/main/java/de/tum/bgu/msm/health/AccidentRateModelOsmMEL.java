@@ -26,6 +26,7 @@ import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleUtils;
 import org.matsim.vehicles.Vehicles;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
@@ -68,6 +69,18 @@ public class AccidentRateModelOsmMEL {
     }
 
     public void runCasualtyRateMEL() {
+        // Early skip mechanism - check if casualty rate files already exist
+        String casualtyRatesFile = scenario.getConfig().controller().getOutputDirectory() + "casualtyRates.csv";
+        String hourlyCasualtyRatesFile = scenario.getConfig().controller().getOutputDirectory() + "hourlyCasualtyRates.csv";
+
+        if (new File(casualtyRatesFile).exists() && new File(hourlyCasualtyRatesFile).exists()) {
+            log.info("Casualty rate files previously processed will be used:");
+            log.info("  - {}", casualtyRatesFile);
+            log.info("  - {}", hourlyCasualtyRatesFile);
+            log.info("To reprocess, delete these existing files.");
+            return;
+        }
+
         // Initialize injector
         com.google.inject.Injector injector = Injector.createInjector(scenario.getConfig(), new AbstractModule() {
             @Override
