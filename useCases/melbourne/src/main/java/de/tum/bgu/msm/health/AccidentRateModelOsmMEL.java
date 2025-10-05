@@ -9,11 +9,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
-import org.matsim.api.core.v01.TransportMode;
-import org.matsim.api.core.v01.events.LinkEnterEvent;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.contrib.accidents.AccidentsModule;
-import org.matsim.core.api.experimental.events.EventsManager;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Injector;
 import org.matsim.core.events.EventsManagerImpl;
@@ -22,7 +19,6 @@ import org.matsim.core.events.MatsimEventsReader;
 import org.matsim.core.network.io.MatsimNetworkReader;
 import org.matsim.core.scenario.ScenarioByInstanceModule;
 import org.matsim.vehicles.MatsimVehicleReader;
-import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleUtils;
 import org.matsim.vehicles.Vehicles;
 
@@ -382,7 +378,7 @@ public class AccidentRateModelOsmMEL {
                     severeCasualtyExposureByTime.put(hour, exposure);
                 }
                 accidentsContext.getLinkId2info().get(link.getId())
-                        .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                        .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                         .put(accidentType, severeCasualtyExposureByTime);
             }
         }
@@ -442,7 +438,7 @@ public class AccidentRateModelOsmMEL {
     private float getSevereCasualty(Id<Link> linkId, AccidentType accidentType, int hour) {
         OpenIntFloatHashMap timeMap = accidentsContext.getLinkId2info()
                 .get(linkId)
-                .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                 .get(accidentType);
         return timeMap != null ? timeMap.get(hour) : 0.0f;
     }
@@ -465,8 +461,11 @@ public class AccidentRateModelOsmMEL {
     }
 
     public void writeOutHourlyCasualtyRate() throws FileNotFoundException {
-        String outputPath = scenario.getConfig().controller().getOutputDirectory() + "hourlyCasualtyRates.csv";
-        try (PrintWriter writer = new PrintWriter(new FileOutputStream(outputPath, false))) {
+        String csvPath = scenario.getConfig().controller().getOutputDirectory() + "hourlyCasualtyRates.csv";
+        String parquetPath = scenario.getConfig().controller().getOutputDirectory() + "hourlyCasualtyRates.parquet";
+
+        // Write CSV
+        try (PrintWriter writer = new PrintWriter(new FileOutputStream(csvPath, false))) {
             writer.println("osmId,linkId,accidentType,hour,casualty");
             for (OsmLink osmLink : osmLinks) {
                 for (Link link : osmLink.getNetworkLinks()) {
@@ -474,10 +473,10 @@ public class AccidentRateModelOsmMEL {
                         if (ACCIDENT_TYPES_EXCLUDED.contains(accidentType)) continue;
                         for (AccidentSeverity accidentSeverity : AccidentSeverity.values()) {
                             if (ACCIDENT_SEVERITIES_EXCLUDED.contains(accidentSeverity)) continue;
-                            if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType) != null) {
+                            if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType) != null) {
                                 for (int hour = 0; hour < 24; hour++) {
                                     double casualty = accidentsContext.getLinkId2info().get(link.getId())
-                                            .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                                            .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                                             .get(accidentType).get(hour);
                                     if (casualty > 0) {
                                         writer.printf("%d,%s,%s,%d,%s\n",
@@ -494,11 +493,101 @@ public class AccidentRateModelOsmMEL {
                 }
             }
         }
+
+        // Write Parquet
+        writeHourlyCasualtyRateParquet(parquetPath);
+    }
+
+    private void writeHourlyCasualtyRateParquet(String parquetPath) {
+        try (org.apache.arrow.memory.RootAllocator allocator = new org.apache.arrow.memory.RootAllocator()) {
+            // Define schema
+            java.util.List<org.apache.arrow.vector.types.pojo.Field> fields = java.util.Arrays.asList(
+                org.apache.arrow.vector.types.pojo.Field.nullable("osmId", org.apache.arrow.vector.types.pojo.ArrowType.Utf8.INSTANCE),
+                org.apache.arrow.vector.types.pojo.Field.nullable("linkId", org.apache.arrow.vector.types.pojo.ArrowType.Utf8.INSTANCE),
+                org.apache.arrow.vector.types.pojo.Field.nullable("accidentType", org.apache.arrow.vector.types.pojo.ArrowType.Utf8.INSTANCE),
+                org.apache.arrow.vector.types.pojo.Field.nullable("hour", new org.apache.arrow.vector.types.pojo.ArrowType.Int(32, true)),
+                org.apache.arrow.vector.types.pojo.Field.nullable("casualty", new org.apache.arrow.vector.types.pojo.ArrowType.FloatingPoint(org.apache.arrow.vector.types.pojo.FloatingPointPrecision.SINGLE))
+            );
+            org.apache.arrow.vector.types.pojo.Schema schema = new org.apache.arrow.vector.types.pojo.Schema(fields);
+
+            // Collect all records first
+            java.util.List<HourlyCasualtyRecord> records = new java.util.ArrayList<>();
+            for (OsmLink osmLink : osmLinks) {
+                for (Link link : osmLink.getNetworkLinks()) {
+                    for (AccidentType accidentType : AccidentType.values()) {
+                        if (ACCIDENT_TYPES_EXCLUDED.contains(accidentType)) continue;
+                        for (AccidentSeverity accidentSeverity : AccidentSeverity.values()) {
+                            if (ACCIDENT_SEVERITIES_EXCLUDED.contains(accidentSeverity)) continue;
+                            if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType) != null) {
+                                for (int hour = 0; hour < 24; hour++) {
+                                    double casualty = accidentsContext.getLinkId2info().get(link.getId())
+                                            .getSevereFatalCasualtyExposureByAccidentTypeByTime()
+                                            .get(accidentType).get(hour);
+                                    if (casualty > 0) {
+                                        records.add(new HourlyCasualtyRecord(
+                                            String.valueOf(osmLink.osmId),
+                                            link.getId().toString(),
+                                            accidentType.name(),
+                                            hour,
+                                            (float) casualty
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Write in batches
+            int batchSize = 10000;
+            org.apache.hadoop.fs.Path path = new org.apache.hadoop.fs.Path(parquetPath);
+            org.apache.hadoop.conf.Configuration conf = new org.apache.hadoop.conf.Configuration();
+
+            try (org.apache.parquet.hadoop.ParquetWriter<org.apache.arrow.vector.VectorSchemaRoot> writer =
+                 org.apache.parquet.arrow.ArrowParquetWriter.builder(
+                     org.apache.hadoop.conf.HadoopOutputFile.fromPath(path, conf))
+                     .withSchema(schema)
+                     .build()) {
+
+                for (int i = 0; i < records.size(); i += batchSize) {
+                    int endIndex = Math.min(i + batchSize, records.size());
+                    java.util.List<HourlyCasualtyRecord> batch = records.subList(i, endIndex);
+
+                    try (org.apache.arrow.vector.VectorSchemaRoot root = org.apache.arrow.vector.VectorSchemaRoot.create(schema, allocator)) {
+                        root.allocateNew();
+
+                        org.apache.arrow.vector.VarCharVector osmIdVector = (org.apache.arrow.vector.VarCharVector) root.getVector("osmId");
+                        org.apache.arrow.vector.VarCharVector linkIdVector = (org.apache.arrow.vector.VarCharVector) root.getVector("linkId");
+                        org.apache.arrow.vector.VarCharVector accidentTypeVector = (org.apache.arrow.vector.VarCharVector) root.getVector("accidentType");
+                        org.apache.arrow.vector.IntVector hourVector = (org.apache.arrow.vector.IntVector) root.getVector("hour");
+                        org.apache.arrow.vector.Float4Vector casualtyVector = (org.apache.arrow.vector.Float4Vector) root.getVector("casualty");
+
+                        for (int j = 0; j < batch.size(); j++) {
+                            HourlyCasualtyRecord record = batch.get(j);
+                            osmIdVector.setSafe(j, record.getOsmId().getBytes());
+                            linkIdVector.setSafe(j, record.getLinkId().getBytes());
+                            accidentTypeVector.setSafe(j, record.getAccidentType().getBytes());
+                            hourVector.setSafe(j, record.getHour());
+                            casualtyVector.setSafe(j, record.getCasualty());
+                        }
+
+                        root.setRowCount(batch.size());
+                        writer.write(root);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Error writing Parquet hourly casualty rates file: {}", parquetPath, e);
+        }
     }
 
     public void writeOutCasualtyRate() throws FileNotFoundException {
-        String outputPath = scenario.getConfig().controller().getOutputDirectory() + "casualtyRates.csv";
+        String parquetPath = scenario.getConfig().controller().getOutputDirectory() + "casualtyRates.parquet";
+
         StringBuilder data = new StringBuilder("osmId,linkId,accidentType,casualty\n");
+        java.util.List<CasualtyRateRecord> records = new java.util.ArrayList<>();
 
         for (OsmLink osmLink : osmLinks) {
             for (Link link : osmLink.getNetworkLinks()) {
@@ -507,70 +596,82 @@ public class AccidentRateModelOsmMEL {
                     for (AccidentSeverity accidentSeverity : AccidentSeverity.values()) {
                         if (ACCIDENT_SEVERITIES_EXCLUDED.contains(accidentSeverity)) continue;
 
-                    /*
-                    double totalCasualty = osmLink.getNetworkLinks().stream()
-                            .mapToDouble(link -> calculateTotalCasualty(link.getId(), accidentType))
-                            .sum();
-
-                     */
                         double totalCasualty = 0;
-                        if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType) != null) {
-
+                        if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType) != null) {
                             for (int hour = 0; hour < 24; hour++) {
-                                totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
-
+                                totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                             }
-
                         }
 
                         if (totalCasualty > 0) {
                             data.append(String.format("%d,%s,%s,%s\n", osmLink.osmId, link.getId().toString(), accidentType.name(), Double.toString(totalCasualty)));
+                            records.add(new CasualtyRateRecord(
+                                String.valueOf(osmLink.osmId),
+                                link.getId().toString(),
+                                accidentType.name(),
+                                (float) totalCasualty
+                            ));
                         }
                     }
                 }
             }
         }
-        writeToFile(outputPath, data.toString());
+
+        // Write Parquet
+        writeCasualtyRateParquet(parquetPath, records);
     }
 
-    public static void writeToFile(String path, String data) throws FileNotFoundException {
-        try (PrintWriter writer = new PrintWriter(new FileOutputStream(path, false))) {
-            writer.print(data);
-        }
-    }
+    private void writeCasualtyRateParquet(String parquetPath, java.util.List<CasualtyRateRecord> records) {
+        try (org.apache.arrow.memory.RootAllocator allocator = new org.apache.arrow.memory.RootAllocator()) {
+            // Define schema
+            java.util.List<org.apache.arrow.vector.types.pojo.Field> fields = java.util.Arrays.asList(
+                org.apache.arrow.vector.types.pojo.Field.nullable("osmId", org.apache.arrow.vector.types.pojo.ArrowType.Utf8.INSTANCE),
+                org.apache.arrow.vector.types.pojo.Field.nullable("linkId", org.apache.arrow.vector.types.pojo.ArrowType.Utf8.INSTANCE),
+                org.apache.arrow.vector.types.pojo.Field.nullable("accidentType", org.apache.arrow.vector.types.pojo.ArrowType.Utf8.INSTANCE),
+                org.apache.arrow.vector.types.pojo.Field.nullable("casualty", new org.apache.arrow.vector.types.pojo.ArrowType.FloatingPoint(org.apache.arrow.vector.types.pojo.FloatingPointPrecision.SINGLE))
+            );
+            org.apache.arrow.vector.types.pojo.Schema schema = new org.apache.arrow.vector.types.pojo.Schema(fields);
 
-    private double calculateTotalCasualty(Id<Link> linkId, AccidentType accidentType) {
-        OpenIntFloatHashMap timeMap = accidentsContext.getLinkId2info()
-                .get(linkId)
-                .getSevereFatalCasualityExposureByAccidentTypeByTime()
-                .get(accidentType);
-        if (timeMap == null) return 0.0;
-        double total = 0.0;
-        for (int hour = 0; hour < 24; hour++) {
-            total += timeMap.get(hour);
-        }
-        return total;
-    }
+            // Write in batches
+            int batchSize = 10000;
+            org.apache.hadoop.fs.Path path = new org.apache.hadoop.fs.Path(parquetPath);
+            org.apache.hadoop.conf.Configuration conf = new org.apache.hadoop.conf.Configuration();
 
-    public void writeOutExposure() throws FileNotFoundException {
-        String outputPath = scenario.getConfig().controller().getOutputDirectory() + "linkExposure.csv";
-        StringBuilder data = new StringBuilder("osmId,accidentType,exposure\n");
+            try (org.apache.parquet.hadoop.ParquetWriter<org.apache.arrow.vector.VectorSchemaRoot> writer =
+                 org.apache.parquet.arrow.ArrowParquetWriter.builder(
+                     org.apache.hadoop.conf.HadoopOutputFile.fromPath(path, conf))
+                     .withSchema(schema)
+                     .build()) {
 
-        for (OsmLink osmLink : osmLinks) {
-            for (AccidentType accidentType : AccidentType.values()) {
-                if (ACCIDENT_TYPES_EXCLUDED.contains(accidentType)) continue;
-                for (AccidentSeverity accidentSeverity : AccidentSeverity.values()) {
-                    if (ACCIDENT_SEVERITIES_EXCLUDED.contains(accidentSeverity)) continue;
-                    double totalExposure = osmLink.getNetworkLinks().stream()
-                            .mapToDouble(link -> calculateTotalCasualty(link.getId(), accidentType))
-                            .sum();
-                    if (totalExposure > 0) {
-                        data.append(String.format("%d,%s,%.2f\n", osmLink.osmId, accidentType.name(), totalExposure));
+                for (int i = 0; i < records.size(); i += batchSize) {
+                    int endIndex = Math.min(i + batchSize, records.size());
+                    java.util.List<CasualtyRateRecord> batch = records.subList(i, endIndex);
+
+                    try (org.apache.arrow.vector.VectorSchemaRoot root = org.apache.arrow.vector.VectorSchemaRoot.create(schema, allocator)) {
+                        root.allocateNew();
+
+                        org.apache.arrow.vector.VarCharVector osmIdVector = (org.apache.arrow.vector.VarCharVector) root.getVector("osmId");
+                        org.apache.arrow.vector.VarCharVector linkIdVector = (org.apache.arrow.vector.VarCharVector) root.getVector("linkId");
+                        org.apache.arrow.vector.VarCharVector accidentTypeVector = (org.apache.arrow.vector.VarCharVector) root.getVector("accidentType");
+                        org.apache.arrow.vector.Float4Vector casualtyVector = (org.apache.arrow.vector.Float4Vector) root.getVector("casualty");
+
+                        for (int j = 0; j < batch.size(); j++) {
+                            CasualtyRateRecord record = batch.get(j);
+                            osmIdVector.setSafe(j, record.getOsmId().getBytes());
+                            linkIdVector.setSafe(j, record.getLinkId().getBytes());
+                            accidentTypeVector.setSafe(j, record.getAccidentType().getBytes());
+                            casualtyVector.setSafe(j, record.getCasualty());
+                        }
+
+                        root.setRowCount(batch.size());
+                        writer.write(root);
                     }
                 }
             }
+
+        } catch (Exception e) {
+            log.error("Error writing Parquet casualty rates file: {}", parquetPath, e);
         }
-        writeToFile(outputPath, data.toString());
     }
 
 
@@ -612,8 +713,89 @@ public class AccidentRateModelOsmMEL {
      */
     private void loadCasualtyDataFromFiles(String hourlyCasualtyRatesFile) {
         long startTime = System.currentTimeMillis();
-        log.info("Loading casualty data from file: {}", hourlyCasualtyRatesFile);
 
+        // Check if Parquet file exists, otherwise fall back to CSV
+        String parquetFile = hourlyCasualtyRatesFile.replace(".csv", ".parquet");
+        boolean useParquet = new java.io.File(parquetFile).exists();
+
+        if (useParquet) {
+            log.info("Loading casualty data from Parquet file: {}", parquetFile);
+            loadCasualtyDataFromParquet(parquetFile, startTime);
+        } else {
+            log.info("Parquet file not found, loading from CSV: {}", hourlyCasualtyRatesFile);
+            loadCasualtyDataFromCSV(hourlyCasualtyRatesFile, startTime);
+        }
+    }
+
+    private void loadCasualtyDataFromParquet(String parquetFile, long startTime) {
+        int loadedRecords = 0;
+        int skippedRecords = 0;
+
+        try (org.apache.arrow.memory.RootAllocator allocator = new org.apache.arrow.memory.RootAllocator()) {
+            org.apache.hadoop.fs.Path path = new org.apache.hadoop.fs.Path(parquetFile);
+            org.apache.parquet.arrow.schema.SchemaConverter converter = new org.apache.parquet.arrow.schema.SchemaConverter();
+
+            try (org.apache.parquet.hadoop.ParquetFileReader reader = org.apache.parquet.hadoop.ParquetFileReader.open(
+                    org.apache.hadoop.conf.HadoopInputFile.fromPath(path, new org.apache.hadoop.conf.Configuration()))) {
+
+                org.apache.parquet.schema.MessageType schema = reader.getFileMetaData().getSchema();
+                org.apache.arrow.vector.types.pojo.Schema arrowSchema = converter.fromParquet(schema).getArrowSchema();
+
+                try (org.apache.arrow.vector.VectorSchemaRoot root = org.apache.arrow.vector.VectorSchemaRoot.create(arrowSchema, allocator);
+                     org.apache.parquet.arrow.ArrowParquetReader arrowReader = new org.apache.parquet.arrow.ArrowParquetReader(allocator, reader)) {
+
+                    while (arrowReader.loadNextBatch()) {
+                        int batchSize = root.getRowCount();
+
+                        org.apache.arrow.vector.VarCharVector linkIdVector = (org.apache.arrow.vector.VarCharVector) root.getVector("linkId");
+                        org.apache.arrow.vector.VarCharVector accidentTypeVector = (org.apache.arrow.vector.VarCharVector) root.getVector("accidentType");
+                        org.apache.arrow.vector.IntVector hourVector = (org.apache.arrow.vector.IntVector) root.getVector("hour");
+                        org.apache.arrow.vector.Float4Vector casualtyVector = (org.apache.arrow.vector.Float4Vector) root.getVector("casualty");
+
+                        java.util.List<CasualtyRecord> batch = new java.util.ArrayList<>(batchSize);
+
+                        for (int i = 0; i < batchSize; i++) {
+                            if (!linkIdVector.isNull(i) && !accidentTypeVector.isNull(i) &&
+                                !hourVector.isNull(i) && !casualtyVector.isNull(i)) {
+
+                                String linkIdStr = linkIdVector.getObject(i).toString();
+                                String accidentTypeStr = accidentTypeVector.getObject(i).toString();
+                                int hour = hourVector.get(i);
+                                float casualty = casualtyVector.get(i);
+
+                                try {
+                                    batch.add(new CasualtyRecord(
+                                        Id.createLinkId(linkIdStr),
+                                        AccidentType.valueOf(accidentTypeStr),
+                                        hour,
+                                        casualty
+                                    ));
+                                } catch (Exception e) {
+                                    // Skip malformed records
+                                }
+                            }
+                        }
+
+                        if (!batch.isEmpty()) {
+                            int[] batchResults = processCasualtyBatch(batch);
+                            loadedRecords += batchResults[0];
+                            skippedRecords += batchResults[1];
+                        }
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Error reading Parquet casualty rates file: {}", parquetFile, e);
+            throw new RuntimeException("Failed to load casualty data from Parquet file", e);
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("Loaded {} casualty records from Parquet, skipped {} records in {} ms",
+                loadedRecords, skippedRecords, elapsed);
+    }
+
+    private void loadCasualtyDataFromCSV(String hourlyCasualtyRatesFile, long startTime) {
         int loadedRecords = 0;
         int skippedRecords = 0;
 
@@ -647,56 +829,13 @@ public class AccidentRateModelOsmMEL {
             }
 
         } catch (Exception e) {
-            log.error("Error reading casualty rates file: {}", hourlyCasualtyRatesFile, e);
-            throw new RuntimeException("Failed to load casualty data from files", e);
+            log.error("Error reading CSV casualty rates file: {}", hourlyCasualtyRatesFile, e);
+            throw new RuntimeException("Failed to load casualty data from CSV file", e);
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
-        log.info("Loaded {} casualty records, skipped {} records in {} ms",
+        log.info("Loaded {} casualty records from CSV, skipped {} records in {} ms",
                 loadedRecords, skippedRecords, elapsed);
-    }
-
-    private CasualtyRecord parseCasualtyLine(String line) {
-        try {
-            String[] parts = line.split(",");
-            if (parts.length != 5) return null;
-
-            return new CasualtyRecord(
-                    Id.createLinkId(parts[1]),
-                    AccidentType.valueOf(parts[2]),
-                    Integer.parseInt(parts[3]),
-                    Float.parseFloat(parts[4])
-            );
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private int[] processCasualtyBatch(java.util.List<CasualtyRecord> batch) {
-        int loaded = 0;
-        int skipped = 0;
-
-        java.util.Map<Id<Link>, java.util.List<CasualtyRecord>> recordsByLink = batch.stream()
-                .collect(java.util.stream.Collectors.groupingBy(CasualtyRecord::getLinkId));
-
-        for (java.util.Map.Entry<Id<Link>, java.util.List<CasualtyRecord>> entry : recordsByLink.entrySet()) {
-            Id<Link> linkId = entry.getKey();
-            java.util.List<CasualtyRecord> linkRecords = entry.getValue();
-
-            AccidentLinkInfo linkInfo = accidentsContext.getLinkId2info().get(linkId);
-            if (linkInfo != null) {
-                for (CasualtyRecord record : linkRecords) {
-                    OpenIntFloatHashMap hourlyMap = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime()
-                            .computeIfAbsent(record.getAccidentType(), k -> new OpenIntFloatHashMap());
-                    hourlyMap.put(record.getHour(), record.getCasualty());
-                    loaded++;
-                }
-            } else {
-                skipped += linkRecords.size();
-            }
-        }
-
-        return new int[]{loaded, skipped};
     }
 
     private static class CasualtyRecord {
@@ -729,67 +868,44 @@ public class AccidentRateModelOsmMEL {
         }
     }
 
-    // Subclass for motorized events
-    static class AnalysisEventHandlerMotorized extends AnalysisEventHandler2 {
-        public AnalysisEventHandlerMotorized(Vehicles vehicles, Scenario scenario) {
-            super(vehicles, scenario);
+    private static class HourlyCasualtyRecord {
+        private final String osmId;
+        private final String linkId;
+        private final String accidentType;
+        private final int hour;
+        private final float casualty;
+
+        public HourlyCasualtyRecord(String osmId, String linkId, String accidentType, int hour, float casualty) {
+            this.osmId = osmId;
+            this.linkId = linkId;
+            this.accidentType = accidentType;
+            this.hour = hour;
+            this.casualty = casualty;
         }
 
-        @Override
-        public void handleEvent(LinkEnterEvent event) {
-            Id<Vehicle> vehicleId = event.getVehicleId();
-            Vehicle vehicle = vehicles.getVehicles().get(vehicleId);
-            if (vehicle != null) {
-                String mode = vehicle.getType() != null ? vehicle.getType().getNetworkMode() : "car";
-                if (mode.equals("car") || mode.equals("truck")) {
-                    super.handleEvent(event);
-                }
-            }
-        }
+        public String getOsmId() { return osmId; }
+        public String getLinkId() { return linkId; }
+        public String getAccidentType() { return accidentType; }
+        public int getHour() { return hour; }
+        public float getCasualty() { return casualty; }
     }
 
-    // Subclass for non-motorized events
-    static class AnalysisEventHandlerNonMotorized extends AnalysisEventHandler2 {
-        public AnalysisEventHandlerNonMotorized(Vehicles vehicles, Scenario scenario) {
-            super(vehicles, scenario);
+    private static class CasualtyRateRecord {
+        private final String osmId;
+        private final String linkId;
+        private final String accidentType;
+        private final float casualty;
+
+        public CasualtyRateRecord(String osmId, String linkId, String accidentType, float casualty) {
+            this.osmId = osmId;
+            this.linkId = linkId;
+            this.accidentType = accidentType;
+            this.casualty = casualty;
         }
 
-        @Override
-        public void handleEvent(LinkEnterEvent event) {
-            Id<Vehicle> vehicleId = event.getVehicleId();
-            Vehicle vehicle = vehicles.getVehicles().get(vehicleId);
-            if (vehicle != null) {
-                String mode = vehicle.getType() != null ? vehicle.getType().getNetworkMode() : null;
-                if (mode != null && (mode.equals("bike") || mode.equals("walk"))) {
-                    super.handleEvent(event);
-                }
-            }
-        }
-    }
-
-    /**
-     * Initialize OSM links structure for file loading without requiring event handlers.
-     * This creates a simplified version that focuses on network structure rather than traffic data.
-     */
-    private void initializeOsmLinksForFileLoading() {
-        log.info("Initializing OSM links structure for file loading...");
-
-        // Create a simplified OSM links structure without traffic demand data
-        Map<Integer, Set<Link>> linksByOsmId = scenario.getNetwork().getLinks().values().stream()
-                .collect(Collectors.groupingBy(
-                        link -> getOsmId(link),
-                        Collectors.toSet()
-                ));
-
-        osmLinks = linksByOsmId.entrySet().stream()
-                .map(entry -> {
-                    OsmLink osmLink = new OsmLink(entry.getKey(), entry.getValue());
-                    osmLink.computeAttributes();
-                    // Skip demand computation since we don't have event handlers in file-loading mode
-                    return osmLink;
-                })
-                .collect(Collectors.toList());
-
-        log.info("OSM links structure initialized for file loading: {} OsmLinks created.", osmLinks.size());
+        public String getOsmId() { return osmId; }
+        public String getLinkId() { return linkId; }
+        public String getAccidentType() { return accidentType; }
+        public float getCasualty() { return casualty; }
     }
 }

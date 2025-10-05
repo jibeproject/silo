@@ -8,11 +8,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
-import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.events.LinkEnterEvent;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.contrib.accidents.AccidentsModule;
-import org.matsim.core.api.experimental.events.EventsManager;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Injector;
 import org.matsim.core.events.EventsManagerImpl;
@@ -350,7 +348,7 @@ public class AccidentRateModelOsmMCR {
                     severeCasualtyExposureByTime.put(hour, exposure);
                 }
                 accidentsContext.getLinkId2info().get(link.getId())
-                        .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                        .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                         .put(accidentType, severeCasualtyExposureByTime);
             }
         }
@@ -410,7 +408,7 @@ public class AccidentRateModelOsmMCR {
     private float getSevereCasualty(Id<Link> linkId, AccidentType accidentType, int hour) {
         OpenIntFloatHashMap timeMap = accidentsContext.getLinkId2info()
                 .get(linkId)
-                .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                 .get(accidentType);
         return timeMap != null ? timeMap.get(hour) : 0.0f;
     }
@@ -442,10 +440,10 @@ public class AccidentRateModelOsmMCR {
                         if (ACCIDENT_TYPES_EXCLUDED.contains(accidentType)) continue;
                         for (AccidentSeverity accidentSeverity : AccidentSeverity.values()) {
                             if (ACCIDENT_SEVERITIES_EXCLUDED.contains(accidentSeverity)) continue;
-                            if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType) != null) {
+                            if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType) != null) {
                                 for (int hour = 0; hour < 24; hour++) {
                                     double casualty = accidentsContext.getLinkId2info().get(link.getId())
-                                            .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                                            .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                                             .get(accidentType).get(hour);
                                     if (casualty > 0) {
                                         writer.printf("%d,%s,%s,%d,%s\n",
@@ -482,10 +480,10 @@ public class AccidentRateModelOsmMCR {
 
                      */
                         double totalCasualty = 0;
-                        if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType) != null) {
+                        if (accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType) != null) {
 
                             for (int hour = 0; hour < 24; hour++) {
-                                totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                                totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
 
                             }
 
@@ -510,7 +508,7 @@ public class AccidentRateModelOsmMCR {
     private double calculateTotalCasualty(Id<Link> linkId, AccidentType accidentType) {
         OpenIntFloatHashMap timeMap = accidentsContext.getLinkId2info()
                 .get(linkId)
-                .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                 .get(accidentType);
         if (timeMap == null) return 0.0;
         double total = 0.0;

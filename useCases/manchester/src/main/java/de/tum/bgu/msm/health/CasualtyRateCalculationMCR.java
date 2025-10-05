@@ -1,11 +1,9 @@
 package de.tum.bgu.msm.health;
 
 import cern.colt.map.tfloat.OpenIntFloatHashMap;
-import de.tum.bgu.msm.health.data.LinkInfo;
 import de.tum.bgu.msm.health.injury.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.utils.objectattributes.attributable.Attributes;
@@ -147,7 +145,7 @@ public class CasualtyRateCalculationMCR {
 
         switch (accidentSeverity) {
             case SEVEREFATAL:
-                this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
+                this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
                 break;
             default:
                 throw new RuntimeException("Undefined accident severity " + accidentSeverity);
@@ -202,7 +200,7 @@ public class CasualtyRateCalculationMCR {
         int val = 0;
 
         //
-        OpenIntFloatHashMap casualtyRateByTimeOfDay = this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().getOrDefault(accidentType, new OpenIntFloatHashMap());
+        OpenIntFloatHashMap casualtyRateByTimeOfDay = this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().getOrDefault(accidentType, new OpenIntFloatHashMap());
 
         for (int hour = 0; hour < 24; hour++) {
             if(analzyer.getDemand(link.getId(), getMode(accidentType), hour) > 0 && casualtyRateByTimeOfDay.get(hour) == 0) {
@@ -222,7 +220,7 @@ public class CasualtyRateCalculationMCR {
         }
 
         // update map
-        this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
+        this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
     }
 
     private void printLinkInfo(Link link) {

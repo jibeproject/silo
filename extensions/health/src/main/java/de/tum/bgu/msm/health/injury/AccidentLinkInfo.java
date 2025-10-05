@@ -19,7 +19,6 @@
 
 package de.tum.bgu.msm.health.injury;
 
-import cern.colt.map.tdouble.OpenIntDoubleHashMap;
 import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
@@ -77,11 +76,11 @@ public class AccidentLinkInfo {
 //		return severeFatalCasualityRateByAccidentTypeByTime;
 //	}
 
-	public Map<AccidentType, OpenIntFloatHashMap> getLightCasualityExposureByAccidentTypeByTime() {
+	public Map<AccidentType, OpenIntFloatHashMap> getLightCasualtyExposureByAccidentTypeByTime() {
 		return lightCasualityExposureByAccidentTypeByTime;
 	}
 
-	public Map<AccidentType, OpenIntFloatHashMap> getSevereFatalCasualityExposureByAccidentTypeByTime() {
+	public Map<AccidentType, OpenIntFloatHashMap> getSevereFatalCasualtyExposureByAccidentTypeByTime() {
 		return severeFatalCasualityExposureByAccidentTypeByTime;
 	}
 }

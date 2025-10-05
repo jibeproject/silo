@@ -86,7 +86,7 @@ public class CasualtyRateCalculationOsmMEL {
                 linkCasualtyRateByTime.put(hour, linkCasualtyRate);
             }
             AccidentLinkInfo linkInfo = accidentsContext.getLinkId2info().computeIfAbsent(link.getId(), id -> new AccidentLinkInfo(id));
-            linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, linkCasualtyRateByTime);
+            linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, linkCasualtyRateByTime);
         }
 
 

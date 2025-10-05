@@ -930,7 +930,7 @@ public class AccidentRateModelMEL {
     }
 
     private double calculateRiskForMode(AccidentLinkInfo linkInfo, String mode, int hour) {
-        Map<AccidentType, OpenIntFloatHashMap> exposureByType = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime();
+        Map<AccidentType, OpenIntFloatHashMap> exposureByType = linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime();
 
         switch (mode) {
             // todo: here normally if ONEWAY is 0 other is non-null and vice versa, same for BIKE ...
@@ -1033,18 +1033,18 @@ public class AccidentRateModelMEL {
                 String mode = personInfo.getLinkId2time2mode().get(linkId).get(hour);
                 switch (mode){
                     case "car":
-                        lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.CAR).get(hour);
-                        severeInjuryRisk += linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().get(AccidentType.CAR).get(hour);
+                        lightInjuryRisk += linkInfo.getLightCasualtyExposureByAccidentTypeByTime().get(AccidentType.CAR).get(hour);
+                        severeInjuryRisk += linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().get(AccidentType.CAR).get(hour);
                         break;
                     case "bike":
-                        lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.BIKECAR).get(hour);
-                        severeInjuryRisk += linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().get(AccidentType.BIKECAR).get(hour);
-                        lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.BIKEBIKE).get(hour);
-                        severeInjuryRisk += linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().get(AccidentType.BIKEBIKE).get(hour);
+                        lightInjuryRisk += linkInfo.getLightCasualtyExposureByAccidentTypeByTime().get(AccidentType.BIKECAR).get(hour);
+                        severeInjuryRisk += linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().get(AccidentType.BIKECAR).get(hour);
+                        lightInjuryRisk += linkInfo.getLightCasualtyExposureByAccidentTypeByTime().get(AccidentType.BIKEBIKE).get(hour);
+                        severeInjuryRisk += linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().get(AccidentType.BIKEBIKE).get(hour);
                         break;
                     case "walk":
-                        lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.PED).get(hour);
-                        severeInjuryRisk += linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().get(AccidentType.PED).get(hour);
+                        lightInjuryRisk += linkInfo.getLightCasualtyExposureByAccidentTypeByTime().get(AccidentType.PED).get(hour);
+                        severeInjuryRisk += linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().get(AccidentType.PED).get(hour);
                         break;
                     default:
                         throw new RuntimeException("Undefined mode " + mode);
@@ -1066,12 +1066,12 @@ public class AccidentRateModelMEL {
                 float lightCrash = 0.0f;
                 float severeCrash = 0.0f;
 
-                if(linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(accidentType)!=null){
-                    lightCrash = linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                if(linkInfo.getLightCasualtyExposureByAccidentTypeByTime().get(accidentType)!=null){
+                    lightCrash = linkInfo.getLightCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                 }
 
-                if(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType)!=null){
-                    severeCrash = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                if(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType)!=null){
+                    severeCrash = linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                 }
 
                  switch (accidentType){
@@ -1101,8 +1101,8 @@ public class AccidentRateModelMEL {
                 lightCasualtyByTime.put(hour,lightCasualty);
                 severeCasualtyByTime.put(hour,severeCasualty);
             }
-            linkInfo.getLightCasualityExposureByAccidentTypeByTime().put(accidentType,lightCasualtyByTime);
-            linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType,severeCasualtyByTime);
+            linkInfo.getLightCasualtyExposureByAccidentTypeByTime().put(accidentType,lightCasualtyByTime);
+            linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType,severeCasualtyByTime);
         }
     }
 
@@ -1141,7 +1141,7 @@ public class AccidentRateModelMEL {
             for(int hour = 0; hour < 24; hour++) {
                 OpenIntFloatHashMap timeMap = this.accidentsContext.getLinkId2info()
                         .get(link.getId())
-                        .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                        .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                         .get(accidentType);
 
                 float severeCasualty = (timeMap != null) ? timeMap.get(hour) : 0.0f;
@@ -1180,7 +1180,7 @@ public class AccidentRateModelMEL {
                 severeCasualtyExposureByTime.put(hour, severeCasualtyExposure);
             }
             //this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualityExposureByAccidentTypeByTime().put(accidentType,lightCasualtyExposureByTime);
-            this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, severeCasualtyExposureByTime);
+            this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, severeCasualtyExposureByTime);
         }
     }
 
@@ -1211,8 +1211,8 @@ public class AccidentRateModelMEL {
             OpenIntFloatHashMap lightCasualtyExposureByTime = new OpenIntFloatHashMap();
             OpenIntFloatHashMap severeCasualtyExposureByTime = new OpenIntFloatHashMap();
             for(int hour = 0; hour < 24; hour++) {
-                float lightCasualty = this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
-                float severeCasualty = this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                float lightCasualty = this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                float severeCasualty = this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                 float lightCasualtyExposure =0.f;
                 float severeCasualtyExposure = 0.f;
                 if(mode.equals("car")){
@@ -1235,8 +1235,8 @@ public class AccidentRateModelMEL {
                 lightCasualtyExposureByTime.put(hour,lightCasualtyExposure);
                 severeCasualtyExposureByTime.put(hour,severeCasualtyExposure);
             }
-            this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualityExposureByAccidentTypeByTime().put(accidentType,lightCasualtyExposureByTime);
-            this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType,severeCasualtyExposureByTime);
+            this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualtyExposureByAccidentTypeByTime().put(accidentType,lightCasualtyExposureByTime);
+            this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType,severeCasualtyExposureByTime);
 
         }
     }
@@ -1285,9 +1285,9 @@ public class AccidentRateModelMEL {
                         continue;
                     }
                     double totalCasualty = 0.;
-                    if(accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType) != null){
+                    if(accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType) != null){
                         for(int hour = 0; hour < 24; hour++) {
-                            totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                            totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                         }
                         risk.append(link.getId());
                         risk.append(',');
@@ -1317,9 +1317,9 @@ public class AccidentRateModelMEL {
                     double totalCasualty = 0.;
                     for(int hour = 0; hour<=24; hour++) {
                         if(accidentSeverity.equals(AccidentSeverity.LIGHT)){
-                            totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getLightCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                            totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getLightCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                         }else{
-                            totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                            totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                         }
                     }
                     risk.append(link.getId());
@@ -1357,7 +1357,7 @@ public class AccidentRateModelMEL {
                     }
                     double totalCasualty = 0.;
                     for(int hour = 0; hour < 24; hour++) {
-                        totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
+                        totalCasualty += accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().get(accidentType).get(hour);
                     }
                     risk.append(link.getId());
                     risk.append(',');

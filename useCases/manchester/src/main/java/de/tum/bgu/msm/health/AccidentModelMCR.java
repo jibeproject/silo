@@ -3,23 +3,17 @@ package de.tum.bgu.msm.health;
 import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import de.tum.bgu.msm.container.DataContainer;
 import de.tum.bgu.msm.data.Day;
-import de.tum.bgu.msm.health.airPollutant.emission.MCRHbefaRoadTypeMapping;
-import de.tum.bgu.msm.health.data.DataContainerHealth;
 import de.tum.bgu.msm.health.data.LinkInfo;
-import de.tum.bgu.msm.health.injury.AccidentRateModel;
 import de.tum.bgu.msm.health.injury.AccidentType;
 import de.tum.bgu.msm.models.AbstractModel;
 import de.tum.bgu.msm.models.ModelUpdateListener;
 import de.tum.bgu.msm.properties.Properties;
-import de.tum.bgu.msm.resources.Resources;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.network.Link;
-import org.matsim.api.core.v01.network.Network;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
-import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.scenario.MutableScenario;
 import org.matsim.core.scenario.ScenarioUtils;
 
@@ -113,7 +107,7 @@ public class AccidentModelMCR extends AbstractModel implements ModelUpdateListen
             for (Id<Link> linkId : model.getAccidentsContext().getLinkId2info().keySet()) {
                 //((de.tum.bgu.msm.scenarios.health.HealthDataContainerImpl)dataContainer).getLinkInfoByDay().get(day).get(linkId).setLightCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getLightCasualityExposureByAccidentTypeByTime());
                 //((DataContainerHealth) dataContainer).getLinkInfo().get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
-                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
+                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualtyExposureByAccidentTypeByTime());
             }
 
             logger.info("====================");
