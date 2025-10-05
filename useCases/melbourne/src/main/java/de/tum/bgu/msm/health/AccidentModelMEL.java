@@ -80,6 +80,23 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
     }
 
     private void runAccidentRateModel(int year) {
+        logger.info("Initializing shared network and scenario for year: " + year);
+
+        // Create shared scenario and load network once
+        Config config = ConfigUtils.createConfig();
+        config.controller().setRunId(String.valueOf(latestMatsimYear));
+        final MutableScenario sharedScenario = ScenarioUtils.createMutableScenario(config);
+        sharedScenario.getConfig().travelTimeCalculator().setTraveltimeBinSize(3600);
+
+        // Load network once - it's the same for all days
+        java.util.Properties props = uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMitoBaseProperties();
+        String networkFile = props.getProperty("MATSIM_NETWORK", "input/mito/trafficAssignment/network.xml");
+        new org.matsim.core.network.io.MatsimNetworkReader(sharedScenario.getNetwork()).readFile(networkFile);
+        logger.info("Shared network loaded with {} links for all days", sharedScenario.getNetwork().getLinks().size());
+
+        float scalingFactor = 0.1f; // todo: temporary fix
+        sharedScenario.addScenarioElement("accidentModelFile", properties.main.baseDirectory + "input/accident/");
+
         //generate link injury risks
         for (Day day : simulatedDays) {
             logger.info("Updating injury risk for year: " + year + "| day of week: " + day + ".");
@@ -87,19 +104,11 @@ public class AccidentModelMEL extends AbstractModel implements ModelUpdateListen
             final String outputDirectoryRoot = properties.main.baseDirectory + "scenOutput/"
                     + properties.main.scenarioName + "/matsim/" + latestMatsimYear + "/" + day + "/";
 
-            Config config = ConfigUtils.createConfig();
-            config.controller().setOutputDirectory(outputDirectoryRoot);
-            config.controller().setRunId(String.valueOf(latestMatsimYear));
+            // Update only the output directory for this day - network remains the same
+            sharedScenario.getConfig().controller().setOutputDirectory(outputDirectoryRoot);
 
-            final MutableScenario scenario = ScenarioUtils.createMutableScenario(config);
-            scenario.getConfig().travelTimeCalculator().setTraveltimeBinSize(3600);
-
-            // float scalingFactor = (float) (properties.main.scaleFactor * properties.transportModel.matsimScaleFactor);
-            float scalingFactor = 0.1f; // todo: temporary fix
-            scenario.addScenarioElement("accidentModelFile", properties.main.baseDirectory + "input/accident/");
-
-            // osm-based injury model (new version)
-            AccidentRateModelOsmMEL model = new AccidentRateModelOsmMEL(properties, scenario, 1.f / scalingFactor, day);
+            // osm-based injury model (new version) - reuses the same network
+            AccidentRateModelOsmMEL model = new AccidentRateModelOsmMEL(properties, sharedScenario, 1.f / scalingFactor, day);
             model.runCasualtyRateMEL();
 
             for (Id<Link> linkId : model.getAccidentsContext().getLinkId2info().keySet()) {

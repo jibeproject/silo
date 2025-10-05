@@ -74,12 +74,24 @@ public class AccidentRateModelOsmMEL {
         String hourlyCasualtyRatesFile = scenario.getConfig().controller().getOutputDirectory() + "hourlyCasualtyRates.csv";
 
         if (new File(casualtyRatesFile).exists() && new File(hourlyCasualtyRatesFile).exists()) {
-            log.info("Casualty rate files previously processed will be used:");
+            log.info("Casualty rate files found, loading existing data instead of recomputing:");
             log.info("  - {}", casualtyRatesFile);
             log.info("  - {}", hourlyCasualtyRatesFile);
-            log.info("To reprocess, delete these existing files.");
+
+            // Initialize accident context for ALL links in current network
+            initializeAccidentContextFromNetwork();
+
+            // Initialize OSM links structure for file operations
+            initializeOsmLinksForFileLoading();
+
+            // Load available casualty data from files (missing links will have zero casualties)
+            loadCasualtyDataFromFiles(hourlyCasualtyRatesFile);
+
+            log.info("Successfully loaded casualty data from existing files.");
             return;
         }
+
+        log.info("Casualty rate files not found, proceeding with full computation...");
 
         // Initialize injector
         com.google.inject.Injector injector = Injector.createInjector(scenario.getConfig(), new AbstractModule() {
@@ -91,24 +103,11 @@ public class AccidentRateModelOsmMEL {
             }
         });
 
-        // Read network
-        //networkFile = this.scenario.getConfig().controller().getOutputDirectory() + "car/" + this.scenario.getConfig().controller().getRunId() + ".output_network.xml.gz";
-        log.info("Reading network file...");
-        /*
-        String networkFile = scenario.getConfig().network().getInputFile();
-        if (networkFile == null) {
-            networkFile = "/mnt/usb-TOSHIBA_EXTERNAL_USB_20241124015626F-0:0-part1/manchester/input/mito/trafficAssignment/network(1).xml";
-        }
+        // Network is already loaded in the scenario - no need to read it again!
+        log.info("Updating scenario network context for {} links", scenario.getNetwork().getLinks().size());
 
-         */
-        java.util.Properties props = MelbourneImplementationConfig.getMitoBaseProperties();
-        String networkFile = props.getProperty("MATSIM_NETWORK", "input/mito/trafficAssignment/network.xml");
-        new MatsimNetworkReader(scenario.getNetwork()).readFile(networkFile);
-        log.info("Reading network file... Done.");
-
-        // Set accidentContext
-        // links
-        for (Link link : this.scenario.getNetwork().getLinks().values()) {
+        // Set accidentContext - initialize for all links
+        for (Link link : scenario.getNetwork().getLinks().values()) {
             AccidentLinkInfo info = new AccidentLinkInfo(link.getId());
             this.accidentsContext.getLinkId2info().put(link.getId(), info);
         }
@@ -306,11 +305,30 @@ public class AccidentRateModelOsmMEL {
         }
         log.info("Link casualty frequency calculation completed.");
 
-        try {
-            writeOutCasualtyRate();
-            writeOutHourlyCasualtyRate();
-        } catch (FileNotFoundException e) {
-            log.error("Error writing casualty rates", e);
+        // Only write files if they don't already exist (optimization)
+        String casualtyRatesFile = scenario.getConfig().controller().getOutputDirectory() + "casualtyRates.csv";
+        String hourlyCasualtyRatesFile = scenario.getConfig().controller().getOutputDirectory() + "hourlyCasualtyRates.csv";
+
+        boolean casualtyRatesExist = new File(casualtyRatesFile).exists();
+        boolean hourlyCasualtyRatesExist = new File(hourlyCasualtyRatesFile).exists();
+
+        if (casualtyRatesExist && hourlyCasualtyRatesExist) {
+            log.info("Casualty rate output files already exist, skipping file writing:");
+            log.info("  - {}", casualtyRatesFile);
+            log.info("  - {}", hourlyCasualtyRatesFile);
+        } else {
+            try {
+                if (!casualtyRatesExist) {
+                    writeOutCasualtyRate();
+                    log.info("Written casualty rates to: {}", casualtyRatesFile);
+                }
+                if (!hourlyCasualtyRatesExist) {
+                    writeOutHourlyCasualtyRate();
+                    log.info("Written hourly casualty rates to: {}", hourlyCasualtyRatesFile);
+                }
+            } catch (FileNotFoundException e) {
+                log.error("Error writing casualty rates", e);
+            }
         }
     }
 
@@ -559,6 +577,123 @@ public class AccidentRateModelOsmMEL {
 
     public AccidentsContext getAccidentsContext() {
         return accidentsContext;
+    }
+
+    /**
+     * Initialize accident context for all network links when loading from files.
+     * This is needed when we skip the full computation but still need the context structure.
+     */
+    private void initializeAccidentContextFromNetwork() {
+        log.info("Initializing accident context from existing network...");
+
+        // Check if network is already loaded in the scenario
+        if (scenario.getNetwork().getLinks().isEmpty()) {
+            log.info("Network not loaded, loading network file...");
+            java.util.Properties props = MelbourneImplementationConfig.getMitoBaseProperties();
+            String networkFile = props.getProperty("MATSIM_NETWORK", "input/mito/trafficAssignment/network.xml");
+            new MatsimNetworkReader(scenario.getNetwork()).readFile(networkFile);
+            log.info("Network loaded with {} links", scenario.getNetwork().getLinks().size());
+        } else {
+            log.info("Using pre-loaded network with {} links", scenario.getNetwork().getLinks().size());
+        }
+
+        // Initialize accident context for all links
+        for (Link link : scenario.getNetwork().getLinks().values()) {
+            AccidentLinkInfo info = new AccidentLinkInfo(link.getId());
+            this.accidentsContext.getLinkId2info().put(link.getId(), info);
+        }
+
+        log.info("Accident context initialized for {} links", scenario.getNetwork().getLinks().size());
+    }
+
+    /**
+     * Load casualty data from existing CSV files into the accident context.
+     * Missing links in the files will simply have zero casualties in the current network.
+     *
+     * @param hourlyCasualtyRatesFile Path to the hourly casualty rates CSV file
+     */
+    private void loadCasualtyDataFromFiles(String hourlyCasualtyRatesFile) {
+        log.info("Loading casualty data from file: {}", hourlyCasualtyRatesFile);
+
+        int loadedRecords = 0;
+        int skippedRecords = 0;
+
+        try (java.util.Scanner scanner = new java.util.Scanner(new File(hourlyCasualtyRatesFile))) {
+            // Skip header line
+            if (scanner.hasNextLine()) {
+                scanner.nextLine(); // osmId,linkId,accidentType,hour,casualty
+            }
+
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine().trim();
+                if (line.isEmpty()) continue;
+
+                String[] parts = line.split(",");
+                if (parts.length != 5) {
+                    skippedRecords++;
+                    continue;
+                }
+
+                try {
+                    // Parse CSV fields: osmId,linkId,accidentType,hour,casualty
+                    Id<Link> linkId = Id.createLinkId(parts[1]);
+                    AccidentType accidentType = AccidentType.valueOf(parts[2]);
+                    int hour = Integer.parseInt(parts[3]);
+                    double casualty = Double.parseDouble(parts[4]);
+
+                    // Only load data for links that exist in current network
+                    AccidentLinkInfo linkInfo = accidentsContext.getLinkId2info().get(linkId);
+                    if (linkInfo != null) {
+                        // Get or create hourly casualty map for this accident type - use correct method name
+                        OpenIntFloatHashMap hourlyMap = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime()
+                                .computeIfAbsent(accidentType, k -> new OpenIntFloatHashMap());
+
+                        // Set the casualty value for this hour
+                        hourlyMap.put(hour, (float) casualty);
+                        loadedRecords++;
+                    } else {
+                        // Link from file doesn't exist in current network - skip silently
+                        skippedRecords++;
+                    }
+
+                } catch (Exception e) {
+                    skippedRecords++;
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("Error reading casualty rates file: {}", hourlyCasualtyRatesFile, e);
+            throw new RuntimeException("Failed to load casualty data from files", e);
+        }
+
+        log.info("Loaded {} casualty records, skipped {} records not in current network",
+                loadedRecords, skippedRecords);
+    }
+
+    /**
+     * Initialize OSM links structure for file loading without requiring event handlers.
+     * This creates a simplified version that focuses on network structure rather than traffic data.
+     */
+    private void initializeOsmLinksForFileLoading() {
+        log.info("Initializing OSM links structure for file loading...");
+
+        // Create a simplified OSM links structure without traffic demand data
+        Map<Integer, Set<Link>> linksByOsmId = scenario.getNetwork().getLinks().values().stream()
+                .collect(Collectors.groupingBy(
+                        link -> getOsmId(link),
+                        Collectors.toSet()
+                ));
+
+        osmLinks = linksByOsmId.entrySet().stream()
+                .map(entry -> {
+                    OsmLink osmLink = new OsmLink(entry.getKey(), entry.getValue());
+                    osmLink.computeAttributes();
+                    // Skip demand computation since we don't have event handlers in file-loading mode
+                    return osmLink;
+                })
+                .collect(Collectors.toList());
+
+        log.info("OSM links structure initialized for file loading: {} OsmLinks created.", osmLinks.size());
     }
 
     // Subclass for motorized events
