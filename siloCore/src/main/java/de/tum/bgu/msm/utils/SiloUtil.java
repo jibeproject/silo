@@ -44,15 +44,63 @@ public class SiloUtil {
     public static int trackDd;
     public static int trackJj;
     public static PrintWriter trackWriter;
-    public static final String LOG_FILE_NAME = "siloLog.log";
-    public static final String LOG_WARN_FILE_NAME = "siloWarnLog.log";
+
+    /**
+     * Generate timestamped log filename with scenario name and runner class
+     * Format: silo_[scenarioName]_[runnerClassName]_[YYYYMMDD_HHMMSS].log
+     */
+    public static String generateLogFileName(String scenarioName, String suffix) {
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+        String timestamp = now.format(formatter);
+
+        // Get the runner class name from the call stack
+        String runnerClassName = getRunnerClassName();
+
+        return String.format("silo_%s_%s_%s%s.log", scenarioName, runnerClassName, timestamp, suffix.isEmpty() ? "" : "_" + suffix);
+    }
+
+    /**
+     * Determine the runner class name from the call stack
+     * Looks for common SILO runner patterns like SiloMEL, RunExposureHealthOffline, etc.
+     */
+    private static String getRunnerClassName() {
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+
+        // Look through the stack trace for known runner patterns
+        for (StackTraceElement element : stackTrace) {
+            String className = element.getClassName();
+            String simpleClassName = className.substring(className.lastIndexOf('.') + 1);
+
+            // Check for common SILO runner class patterns
+            if (simpleClassName.startsWith("Silo") ||
+                    simpleClassName.startsWith("Run") ||
+                    simpleClassName.contains("Main") ||
+                    simpleClassName.contains("Runner") ||
+                    (className.contains("health") && simpleClassName.startsWith("Run")) ||
+                    className.endsWith("MEL")) {
+                return simpleClassName;
+            }
+        }
+
+        // Fallback: look for main method
+        for (StackTraceElement element : stackTrace) {
+            if ("main".equals(element.getMethodName())) {
+                String className = element.getClassName();
+                return className.substring(className.lastIndexOf('.') + 1);
+            }
+        }
+
+        // Ultimate fallback
+        return "Unknown";
+    }
 
     public static Properties siloInitialization(String propertiesPath) {
         Properties properties = Properties.initializeProperties(propertiesPath);
         final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName;
         createDirectoryIfNotExistingYet(outputDirectory);
         try {
-            initLogging(outputDirectory);
+            initLogging(outputDirectory, properties.main.scenarioName);
         } catch (IOException e) {
             logger.warn("Cannot create logfiles.");
             e.printStackTrace();
@@ -70,23 +118,26 @@ public class SiloUtil {
 
     /**
      * heavily "inspired" by MATSim's solution to this
+     *
      * @throws IOException
      */
-    private static void initLogging(String outputDirectory) throws IOException {
+    private static void initLogging(String outputDirectory, String scenarioName) throws IOException {
         final LoggerContext ctx = (LoggerContext) org.apache.logging.log4j.LogManager.getContext(false);
         final Configuration config = ctx.getConfiguration();
         final boolean appendToExistingFile = false;
 
         FileAppender appender;
         { // the "all" logfile
-            appender = FileAppender.newBuilder().setName(LOG_FILE_NAME).setLayout(Controler.DEFAULTLOG4JLAYOUT).withFileName(outputDirectory + System.getProperty("file.separator")+ LOG_FILE_NAME).withAppend(appendToExistingFile).build();
+            String logFileName = generateLogFileName(scenarioName, "");
+            appender = FileAppender.newBuilder().setName("siloLog").setLayout(Controler.DEFAULTLOG4JLAYOUT).withFileName(outputDirectory + System.getProperty("file.separator") + logFileName).withAppend(appendToExistingFile).build();
             appender.start();
             config.getRootLogger().addAppender(appender, org.apache.logging.log4j.Level.ALL, null);
         }
 
         FileAppender warnErrorAppender;
         { // the "warnings and errors" logfile
-            warnErrorAppender = FileAppender.newBuilder().setName(LOG_WARN_FILE_NAME).setLayout(Controler.DEFAULTLOG4JLAYOUT).withFileName(outputDirectory + System.getProperty("file.separator")+ LOG_WARN_FILE_NAME).withAppend(appendToExistingFile).build();
+            String warnLogFileName = generateLogFileName(scenarioName, "warn");
+            warnErrorAppender = FileAppender.newBuilder().setName("siloWarnLog").setLayout(Controler.DEFAULTLOG4JLAYOUT).withFileName(outputDirectory + System.getProperty("file.separator") + warnLogFileName).withAppend(appendToExistingFile).build();
             warnErrorAppender.start();
             config.getRootLogger().addAppender(warnErrorAppender, org.apache.logging.log4j.Level.WARN, null);
         }
@@ -98,63 +149,63 @@ public class SiloUtil {
         ClassLoader classLoader = SiloUtil.class.getClassLoader();
         logger.info("Trying to set up native hdf5 lib");
         String path = null;
-        if(SystemUtils.IS_OS_WINDOWS) {
+        if (SystemUtils.IS_OS_WINDOWS) {
             logger.info("Detected windows OS.");
             try {
                 path = classLoader.getResource("lib/win32/jhdf5.dll").getFile();
                 System.load(path);
-            } catch(Throwable e) {
+            } catch (Throwable e) {
                 logger.debug("Cannot load 32 bit library. Trying 64 bit next.");
                 try {
                     path = classLoader.getResource("lib/win64/jhdf5.dll").getFile();
                     System.load(path);
-                }  catch(Throwable e2) {
+                } catch (Throwable e2) {
                     logger.debug("Cannot load 64 bit library.");
                     path = null;
                 }
             }
-        } else if(SystemUtils.IS_OS_MAC) {
+        } else if (SystemUtils.IS_OS_MAC) {
             logger.info("Detected Mac OS.");
             try {
                 path = classLoader.getResource("lib/macosx32/libjhdf5.jnilib").getFile();
                 System.load(path);
-            } catch(Throwable e) {
+            } catch (Throwable e) {
                 logger.debug("Cannot load 32 bit library. Trying 64 bit next.");
                 try {
                     path = classLoader.getResource("lib/macosx64/libjhdf5.jnilib").getFile();
                     System.load(path);
-                } catch(Throwable e2) {
+                } catch (Throwable e2) {
                     logger.debug("Cannot load 64 bit library.");
                     path = null;
                 }
             }
-        } else if(SystemUtils.IS_OS_LINUX) {
+        } else if (SystemUtils.IS_OS_LINUX) {
             logger.info("Detected linux OS.");
             try {
                 URL url = classLoader.getResource("lib/linux32/libjhdf5.so");
-                if(url == null) {
+                if (url == null) {
                     logger.info("Could not find linux 32 lib");
                 } else {
                     path = url.getFile();
                     System.load(path);
                 }
-            } catch(Throwable e) {
+            } catch (Throwable e) {
                 logger.debug("Cannot load 32 bit library. Trying 64 bit next.");
                 try {
                     URL url = classLoader.getResource("lib/linux64/libjhdf5.so");
-                    if(url == null) {
+                    if (url == null) {
                         logger.info("Could not find linux 64 lib");
                     } else {
                         path = url.getFile();
                         System.load(path);
                     }
-                } catch(Throwable e2) {
+                } catch (Throwable e2) {
                     logger.debug("Cannot load 64 bit library. ");
                     path = null;
                 }
             }
         }
-        if(path != null) {
+        if (path != null) {
             logger.info("Hdf5 library successfully located.");
             System.setProperty("ncsa.hdf.hdf5lib.H5.hdf5lib", path);
         } else {
@@ -164,10 +215,10 @@ public class SiloUtil {
         }
     }
 
-    public static void createDirectoryIfNotExistingYet (String directory) {
-        File test = new File (directory);
+    public static void createDirectoryIfNotExistingYet(String directory) {
+        File test = new File(directory);
         test.mkdirs();
-        if(!test.exists()) {
+        if (!test.exists()) {
             logger.error("Could not create scenarios directory " + directory);
             throw new RuntimeException();
         }
@@ -183,7 +234,7 @@ public class SiloUtil {
 
 
     public static Random getRandomObject() {
-        if(rand == null) {
+        if (rand == null) {
             rand = new Random(42);
         }
         return rand;
@@ -202,7 +253,7 @@ public class SiloUtil {
     }
 
 
-    public static int[] convertIntegerArrayListToArray (List<Integer> al) {
+    public static int[] convertIntegerArrayListToArray(List<Integer> al) {
         Integer[] temp = al.toArray(new Integer[0]);
         int[] list = new int[temp.length];
         for (int i = 0; i < temp.length; i++) {
@@ -212,14 +263,14 @@ public class SiloUtil {
     }
 
 
-    public static String[] convertStringArrayListToArray (ArrayList<String> al) {
+    public static String[] convertStringArrayListToArray(ArrayList<String> al) {
         String[] temp = al.toArray(new String[0]);
         String[] list = new String[temp.length];
         System.arraycopy(temp, 0, list, 0, temp.length);
         return list;
     }
 
-    public static <T> int findPositionInArray (T element, T array[]) {
+    public static <T> int findPositionInArray(T element, T array[]) {
         int ind = -1;
         for (int a = 0; a < array.length; a++) {
             if (array[a].equals(element)) {
@@ -227,13 +278,13 @@ public class SiloUtil {
             }
         }
         if (ind == -1) {
-            logger.error ("Could not find element " + element +
+            logger.error("Could not find element " + element +
                     " in array (see method <findPositionInArray> in class <SiloUtil>");
         }
         return ind;
     }
 
-    public static int findPositionInArray (String string, String[] array) {
+    public static int findPositionInArray(String string, String[] array) {
         int ind = -1;
         for (int a = 0; a < array.length; a++) {
             if (array[a].equalsIgnoreCase(string)) {
@@ -241,14 +292,14 @@ public class SiloUtil {
             }
         }
         if (ind == -1) {
-            logger.error ("Could not find element " + string +
+            logger.error("Could not find element " + string +
                     " in array (see method <findPositionInArray> in class <SiloUtil>");
         }
         return ind;
     }
 
 
-    public static TableDataSet readCSVfile (String fileName) {
+    public static TableDataSet readCSVfile(String fileName) {
         // read csv file and return as TableDataSet
         File dataFile = new File(fileName);
         // line 210 debugging:
@@ -257,8 +308,8 @@ public class SiloUtil {
         boolean exists = dataFile.exists();
         if (!exists) {
             final String msg = "File not found: " + fileName;
-		    logger.error(msg);
-        throw new RuntimeException(msg) ;
+            logger.error(msg);
+            throw new RuntimeException(msg);
         }
         try {
             TableDataFileReader reader = TableDataFileReader.createReader(dataFile);
@@ -271,7 +322,7 @@ public class SiloUtil {
         return dataTable;
     }
 
-    public static TableDataSet readCSVfile2 (String fileName) {
+    public static TableDataSet readCSVfile2(String fileName) {
         // read csv file and return as TableDataSet
         File dataFile = new File(fileName);
         TableDataSet dataTable;
@@ -330,7 +381,7 @@ public class SiloUtil {
         // open file and return PrintWriter object
 
         File outputFile = new File(fileName);
-        if(outputFile.getParentFile() != null) {
+        if (outputFile.getParentFile() != null) {
             outputFile.getParentFile().mkdirs();
         }
         try {
@@ -344,22 +395,21 @@ public class SiloUtil {
     }
 
 
-    public static void writeTableDataSet (TableDataSet data, String fileName) {
+    public static void writeTableDataSet(TableDataSet data, String fileName) {
         try {
             CSVFileWriter cfwWriter = new CSVFileWriter();
             cfwWriter.writeFile(data, new File(fileName));
             cfwWriter.close();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
             logger.error("Could not write TableDataSet to file " + fileName + ".");
         }
     }
 
     @Deprecated
-    public static int select (double[] probabilities) {
+    public static int select(double[] probabilities) {
         // select item based on probabilities (for zero-based double array)
-       return select(probabilities, getSum(probabilities), rand);
+        return select(probabilities, getSum(probabilities), rand);
     }
 
     @Deprecated
@@ -368,13 +418,13 @@ public class SiloUtil {
     }
 
     @Deprecated
-    public static int select (double[] probabilities, double sumProb) {
+    public static int select(double[] probabilities, double sumProb) {
         // select item based on probabilities (for zero-based double array)
         return select(probabilities, getSum(probabilities), rand);
     }
 
     @Deprecated
-    public static int select (double[] probabilities, double sumProb, Random random) {
+    public static int select(double[] probabilities, double sumProb, Random random) {
         // select item based on probabilities (for zero-based double array)
         double selPos = sumProb * random.nextFloat();
         double sum = 0;
@@ -387,12 +437,12 @@ public class SiloUtil {
         return probabilities.length - 1;
     }
 
-    public static int select (float[] probabilities) {
+    public static int select(float[] probabilities) {
         // select item based on probabilities (for zero-based float array)
         return select(probabilities, getSum(probabilities));
     }
 
-    public static int select (float[] probabilities, float sum) {
+    public static int select(float[] probabilities, float sum) {
         // select item based on probabilities (for zero-based float array)
         float selPos = sum * getRandomNumberAsFloat();
         float temp = 0;
@@ -406,7 +456,7 @@ public class SiloUtil {
     }
 
     @Deprecated
-    public static int select (double[] probabilities, int[] id) {
+    public static int select(double[] probabilities, int[] id) {
         // select item based on probabilities (for zero-based float array)
         double selPos = getSum(probabilities) * getRandomNumberAsFloat();
         double sum = 0;
@@ -421,7 +471,7 @@ public class SiloUtil {
     }
 
     @Deprecated
-    public static int select (float[] probabilities, int length, int[] name){
+    public static int select(float[] probabilities, int length, int[] name) {
         //select item based on probabilities and return the name
         //probabilities and name have more items than the required (max number of required items is set on "length")
         double selPos = getSum(probabilities) * getRandomNumberAsFloat();
@@ -461,7 +511,7 @@ public class SiloUtil {
     }
 
     public static <T> T select(Map<T, ? extends Number> mappedProbabilities, double sum) {
-       return select(mappedProbabilities, sum, rand);
+        return select(mappedProbabilities, sum, rand);
     }
 
 
@@ -473,53 +523,53 @@ public class SiloUtil {
         return sm;
     }
 
-    public static double[] convertProbability (double[] probabilities){
+    public static double[] convertProbability(double[] probabilities) {
         //method to return the probability in percentage
         double sum = 0;
         for (double probability : probabilities) {
             sum++;
         }
         for (int row = 0; row < probabilities.length; row++) {
-            probabilities[row] = probabilities[row]/sum*1000;
+            probabilities[row] = probabilities[row] / sum * 1000;
         }
         return probabilities;
     }
 
 
-    public static int select (int upperRange) {
+    public static int select(int upperRange) {
         // select item based on equal probabilities between 0 and upperRange
         int selected = (int) (upperRange * getRandomNumberAsFloat());
         return Math.max(1, selected);
     }
 
 
-    public static int getSum (int[] array) {
+    public static int getSum(int[] array) {
         // return sum of all elements in array
         int sum = 0;
-        for (int val: array) sum += val;
+        for (int val : array) sum += val;
         return sum;
     }
 
 
-    public static float getSum (float[] array) {
+    public static float getSum(float[] array) {
         // return sum of all elements in array
         float sum = 0;
-        for (float val: array) sum += val;
+        for (float val : array) sum += val;
         return sum;
     }
 
 
-    public static double getSum (double[] array) {
+    public static double getSum(double[] array) {
         // return sum of all elements in array
         double sum = 0;
-        for (double val: array) sum += val;
+        for (double val : array) sum += val;
         return sum;
     }
 
 
-    public static Integer getSum (Integer[] array) {
+    public static Integer getSum(Integer[] array) {
         Integer sm = 0;
-        for (Integer value: array) sm += value;
+        for (Integer value : array) sm += value;
         return sm;
     }
 
@@ -536,26 +586,26 @@ public class SiloUtil {
     }
 
 
-    public static float getMean (int[] values) {
+    public static float getMean(int[] values) {
         // calculate mean (average) value
 
         float sm = 0;
-        for (int i: values) sm += i;
+        for (int i : values) sm += i;
         return (sm / values.length);
     }
 
 
-    public static float getWeightedSum(float[] weights, float[] values){
+    public static float getWeightedSum(float[] weights, float[] values) {
         // calculate weighted sum given two sets of arrays.
         float ws = 0;
         for (int i = 0; i < weights.length; i++) {
-            ws += weights[i]*values[i];
+            ws += weights[i] * values[i];
         }
         return ws;
     }
 
 
-    public static float getWeightedSum(float[] weights, float[] values, int[] positions){
+    public static float getWeightedSum(float[] weights, float[] values, int[] positions) {
         // optimization to calculate weighted sum given two sets of arrays
         // The two sets of arrays are complete, but only some cells are different than zero.
         // The third array indicates the location of the cells different than zero.
@@ -567,19 +617,19 @@ public class SiloUtil {
     }
 
 
-    public static float getWeightedSum(double[] weights, float[] values, int[] positions, int total_positions){
+    public static float getWeightedSum(double[] weights, float[] values, int[] positions, int total_positions) {
         // optimization to calculate weighted sum given two sets of arrays
         // The two sets of arrays are complete, but only some cells are different than zero.
         // The third array indicates the location of the cells different than zero.
         float ws = 0;
         for (int i = 0; i < total_positions; i++) {
-            ws += weights[positions[i]-1]*values[positions[i]-1];
+            ws += weights[positions[i] - 1] * values[positions[i] - 1];
         }
         return ws;
     }
 
 
-    public static float getVariance (int[] values) {
+    public static float getVariance(int[] values) {
         // calculate sample variance of array values[]
 
         if (values.length <= 1) {
@@ -588,34 +638,34 @@ public class SiloUtil {
         }
         double sm = 0;
         float mean = getMean(values);
-        for (int i: values) {
+        for (int i : values) {
             sm += Math.pow((i - mean), 2);
         }
-        return (float) (sm / (values.length-1));
+        return (float) (sm / (values.length - 1));
     }
 
 
-    public static String[] convertArrayListToStringArray (ArrayList<String> al) {
+    public static String[] convertArrayListToStringArray(ArrayList<String> al) {
         String[] list = new String[al.size()];
         for (int i = 0; i < al.size(); i++) list[i] = al.get(i);
         return list;
     }
 
 
-    public static int[] convertArrayListToIntArray (ArrayList<Integer> al) {
+    public static int[] convertArrayListToIntArray(ArrayList<Integer> al) {
         int[] list = new int[al.size()];
         for (int i = 0; i < al.size(); i++) list[i] = al.get(i);
         return list;
     }
 
-    public static float[] convertArrayListToFloatArray (ArrayList<Float> al) {
+    public static float[] convertArrayListToFloatArray(ArrayList<Float> al) {
         float[] list = new float[al.size()];
         for (int i = 0; i < al.size(); i++) list[i] = al.get(i);
         return list;
     }
 
 
-    public static int[] convertIntegerToInt (Integer[] values) {
+    public static int[] convertIntegerToInt(Integer[] values) {
         int[] intValues = new int[values.length];
         for (int i = 0; i < values.length; i++) {
             intValues[i] = values[i];
@@ -624,7 +674,7 @@ public class SiloUtil {
     }
 
 
-    public static float getMedian (int[] array) {
+    public static float getMedian(int[] array) {
         // return median value
 
         if (array.length == 0) {
@@ -641,38 +691,38 @@ public class SiloUtil {
     }
 
 
-    public static void finish () {
+    public static void finish() {
         trackingFile("close");
     }
 
 
     public static float rounder(float value, int digits) {
         // rounds value to digits behind the decimal point
-        return Math.round(value * Math.pow(10, digits) + 0.5)/(float) Math.pow(10, digits);
+        return Math.round(value * Math.pow(10, digits) + 0.5) / (float) Math.pow(10, digits);
     }
 
     public static double rounder(double value, int digits) {
         // rounds value to digits behind the decimal point
-        return Math.round(value * Math.pow(10, digits) + 0.5)/ Math.pow(10, digits);
+        return Math.round(value * Math.pow(10, digits) + 0.5) / Math.pow(10, digits);
     }
 
     /**
-    scale double value map so that largest value equals maxVal
-    **/
-    public static void scaleMap (Map<?, Double> doubleMap, float maxVal) {
+     * scale double value map so that largest value equals maxVal
+     **/
+    public static void scaleMap(Map<?, Double> doubleMap, float maxVal) {
         double highestValTemp = Double.MIN_VALUE;
-        for (double val: doubleMap.values()) {
+        for (double val : doubleMap.values()) {
             highestValTemp = Math.max(val, highestValTemp);
         }
         final double highestVal = highestValTemp;
-        doubleMap.replaceAll ((k,v) -> (v * maxVal * 1.) / (highestVal * 1.));
+        doubleMap.replaceAll((k, v) -> (v * maxVal * 1.) / (highestVal * 1.));
     }
 
-    public static float[] scaleArray (float[] array, float maxVal) {
+    public static float[] scaleArray(float[] array, float maxVal) {
         // scale float array so that largest value equals maxVal
 
         float highestVal = Float.MIN_VALUE;
-        for (float val: array) {
+        for (float val : array) {
             highestVal = Math.max(val, highestVal);
         }
         for (int i = 0; i < array.length; i++) {
@@ -682,11 +732,11 @@ public class SiloUtil {
     }
 
 
-    public static double[] scaleArray (double[] array, double maxVal) {
+    public static double[] scaleArray(double[] array, double maxVal) {
         // scale double array so that largest value equals maxVal
 
         double highestVal = Double.MIN_VALUE;
-        for (double val: array) {
+        for (double val : array) {
             highestVal = Math.max(val, highestVal);
         }
         for (int i = 0; i < array.length; i++) {
@@ -696,7 +746,7 @@ public class SiloUtil {
     }
 
 
-    public static int[] setArrayToValue (int[] anArray, int value) {
+    public static int[] setArrayToValue(int[] anArray, int value) {
         // fill one-dimensional integer array with value
         for (int i = 0; i < anArray.length; i++) {
             anArray[i] = value;
@@ -705,7 +755,7 @@ public class SiloUtil {
     }
 
 
-    public static float[] setArrayToValue (float[] anArray, float value) {
+    public static float[] setArrayToValue(float[] anArray, float value) {
         // fill one-dimensional integer array with value
 
         for (int i = 0; i < anArray.length; i++) anArray[i] = value;
@@ -713,7 +763,7 @@ public class SiloUtil {
     }
 
 
-    public static long[] setArrayToValue (long[] anArray, long value) {
+    public static long[] setArrayToValue(long[] anArray, long value) {
         // fill one-dimensional integer array with value
 
         for (int i = 0; i < anArray.length; i++) anArray[i] = value;
@@ -721,17 +771,17 @@ public class SiloUtil {
     }
 
 
-    public static int[][] setArrayToValue (int[][] anArray, int value) {
+    public static int[][] setArrayToValue(int[][] anArray, int value) {
         // fill two-dimensional integer array with value
 
         for (int i = 0; i < anArray.length; i++) {
-            for (int j = 0; j < anArray[i].length; j++)  anArray[i][j] = value;
+            for (int j = 0; j < anArray[i].length; j++) anArray[i][j] = value;
         }
         return anArray;
     }
 
 
-    public static float[][] setArrayToValue (float[][] anArray, float value) {
+    public static float[][] setArrayToValue(float[][] anArray, float value) {
         // fill two-dimensional float array with value
 
         for (int i = 0; i < anArray.length; i++) {
@@ -741,7 +791,7 @@ public class SiloUtil {
     }
 
 
-    public static int[][][] setArrayToValue (int[][][] anArray, int value) {
+    public static int[][][] setArrayToValue(int[][][] anArray, int value) {
         // fill three-dimensional integer array with value
 
         for (int i = 0; i < anArray.length; i++) {
@@ -753,7 +803,7 @@ public class SiloUtil {
     }
 
 
-    public static boolean[] createArrayWithValue (int arrayLength, boolean value) {
+    public static boolean[] createArrayWithValue(int arrayLength, boolean value) {
         // fill one-dimensional boolean array with value
 
         boolean[] anArray = new boolean[arrayLength];
@@ -762,7 +812,7 @@ public class SiloUtil {
     }
 
 
-    public static float[] createArrayWithValue (int arrayLength, float value) {
+    public static float[] createArrayWithValue(int arrayLength, float value) {
         // fill one-dimensional float array with value
 
         float[] anArray = new float[arrayLength];
@@ -771,7 +821,7 @@ public class SiloUtil {
     }
 
 
-    public static double[] createArrayWithValue (int arrayLength, double value) {
+    public static double[] createArrayWithValue(int arrayLength, double value) {
         // fill one-dimensional double array with value
 
         double[] anArray = new double[arrayLength];
@@ -780,7 +830,7 @@ public class SiloUtil {
     }
 
 
-    public static int[] createArrayWithValue (int arrayLength, int value) {
+    public static int[] createArrayWithValue(int arrayLength, int value) {
         // fill one-dimensional boolean array with value
         int[] anArray = new int[arrayLength];
         Arrays.fill(anArray, value);
@@ -788,7 +838,7 @@ public class SiloUtil {
     }
 
 
-    public static int[] expandArrayByOneElement (int[] existing, int addElement) {
+    public static int[] expandArrayByOneElement(int[] existing, int addElement) {
         // create new array that has length of existing.length + 1 and copy values into new array
         int[] expanded = new int[existing.length + 1];
         System.arraycopy(existing, 0, expanded, 0, existing.length);
@@ -799,7 +849,7 @@ public class SiloUtil {
 
     public static int[] removeOneElementFromZeroBasedArray(int[] array, int elementIndex) {
         // remove elementIndex'th element from array
-        if (elementIndex < 0 || elementIndex > array.length-1) logger.error("Cannot remove element "+elementIndex +
+        if (elementIndex < 0 || elementIndex > array.length - 1) logger.error("Cannot remove element " + elementIndex +
                 " from zero-based int array with length " + array.length);
         int[] reduced = new int[array.length - 1];
         if (elementIndex == 0) {
@@ -818,7 +868,7 @@ public class SiloUtil {
 
     public static String[] removeOneElementFromZeroBasedArray(String[] array, int elementIndex) {
         // remove elementIndex'th element from array
-        if (elementIndex < 0 || elementIndex > array.length-1) logger.error("Cannot remove element "+elementIndex +
+        if (elementIndex < 0 || elementIndex > array.length - 1) logger.error("Cannot remove element " + elementIndex +
                 " from zero-based int array with length " + array.length);
         String[] reduced = new String[array.length - 1];
         if (elementIndex == 0) {
@@ -837,7 +887,7 @@ public class SiloUtil {
 
     public static double[] removeOneElementFromZeroBasedArray(double[] array, int elementIndex) {
         // remove elementIndex'th element from array
-        if (elementIndex < 0 || elementIndex > array.length-1) logger.error("Cannot remove element "+elementIndex +
+        if (elementIndex < 0 || elementIndex > array.length - 1) logger.error("Cannot remove element " + elementIndex +
                 " from zero-based int array with length " + array.length);
         double[] reduced = new double[array.length - 1];
         if (elementIndex == 0) {
@@ -854,23 +904,23 @@ public class SiloUtil {
     }
 
 
-    public static TableDataSet addIntegerColumnToTableDataSet(TableDataSet table, String label){
-        int[] dummy3 = SiloUtil.createArrayWithValue(table.getRowCount(),0);
-        table.appendColumn(dummy3,label);
+    public static TableDataSet addIntegerColumnToTableDataSet(TableDataSet table, String label) {
+        int[] dummy3 = SiloUtil.createArrayWithValue(table.getRowCount(), 0);
+        table.appendColumn(dummy3, label);
         return table;
     }
 
 
-    public static TableDataSet addIntegerColumnToTableDataSet(TableDataSet table, String label, int length){
-        int[] dummy3 = SiloUtil.createArrayWithValue(length,0);
-        table.appendColumn(dummy3,label);
+    public static TableDataSet addIntegerColumnToTableDataSet(TableDataSet table, String label, int length) {
+        int[] dummy3 = SiloUtil.createArrayWithValue(length, 0);
+        table.appendColumn(dummy3, label);
         return table;
     }
 
     public static int getHighestVal(int[] array) {
         // return highest number in int array
         int high = Integer.MIN_VALUE;
-        for (int num: array) high = Math.max(high, num);
+        for (int num : array) high = Math.max(high, num);
         return high;
     }
 
@@ -878,12 +928,12 @@ public class SiloUtil {
     public static float getHighestVal(float[] array) {
         // return highest number in float array
         float high = Float.MIN_VALUE;
-        for (float num: array) high = Math.max(high, num);
+        for (float num : array) high = Math.max(high, num);
         return high;
     }
 
 
-    public static float getWeightedMean (float[] values, int[] weights) {
+    public static float getWeightedMean(float[] values, int[] weights) {
         // calculate mean (average) value
 
         if (values.length != weights.length) logger.error("values[] and weights[] have unequal length in getWeightedMean()");
@@ -896,7 +946,7 @@ public class SiloUtil {
     public static int getHighestVal(String[] array) {
         // return highest number in String array
         int high = Integer.MIN_VALUE;
-        for (String num: array) high = Math.max(high, Integer.parseInt(num));
+        for (String num : array) high = Math.max(high, Integer.parseInt(num));
         return high;
     }
 
@@ -904,7 +954,7 @@ public class SiloUtil {
     public static int getLowestVal(String[] array) {
         // return highest number in String array
         int low = Integer.MAX_VALUE;
-        for (String num: array) low = Math.min(low, Integer.parseInt(num));
+        for (String num : array) low = Math.min(low, Integer.parseInt(num));
         return low;
     }
 
@@ -912,37 +962,37 @@ public class SiloUtil {
     public static int getLowestVal(int[] array) {
         // return highest number in String array
         int low = Integer.MAX_VALUE;
-        for (int num: array) low = Math.min(low, num);
+        for (int num : array) low = Math.min(low, num);
         return low;
     }
 
 
-    public static boolean containsElement (int[] array, int value) {
+    public static boolean containsElement(int[] array, int value) {
         // returns true if array contains value, otherwise false
         boolean found = false;
-        for (int i: array) if (i == value) found = true;
+        for (int i : array) if (i == value) found = true;
         return found;
     }
 
 
-    public static boolean containsElement (ArrayList<Integer> array, int value) {
+    public static boolean containsElement(ArrayList<Integer> array, int value) {
         // returns true if array contains value, otherwise false
         boolean found = false;
-        for (int i: array) if (i == value) found = true;
+        for (int i : array) if (i == value) found = true;
         return found;
     }
 
-    public static double sumProduct(double[] a, int[] b){
+    public static double sumProduct(double[] a, int[] b) {
         double sum = 0;
-        for (int i = 0; i < a.length; i++){
-            sum = sum + a[i]*b[i];
+        for (int i = 0; i < a.length; i++) {
+            sum = sum + a[i] * b[i];
         }
 
 
         return sum;
     }
 
-    public static void deleteFile (String fileName) {
+    public static void deleteFile(String fileName) {
         // delete file with name fileName
         File dataFile = new File(fileName);
         boolean couldDelete = dataFile.delete();
@@ -950,33 +1000,33 @@ public class SiloUtil {
     }
 
 
-    public static void copyFile (String source, String destination) {
-        File src = new File (source);
-        File dst = new File (destination);
+    public static void copyFile(String source, String destination) {
+        File src = new File(source);
+        File dst = new File(destination);
         try {
             Files.copy(src.toPath(), dst.toPath(), REPLACE_EXISTING);
         } catch (Exception e) {
             final String msg = "Unable to copy file " + source + " to directory " + destination;
-		logger.warn(msg);
+            logger.warn(msg);
             throw new RuntimeException(msg) ;
             // need to throw exception since otherwise the code will not fail here but at some point later.  kai, aug'16
         }
     }
 
 
-    public static void copyDirectoryAndFiles (String sourceDirectory, String destinationDirectory) {
+    public static void copyDirectoryAndFiles(String sourceDirectory, String destinationDirectory) {
         // source: http://www.mkyong.com/java/how-to-copy-directory-in-java/
         File srcFolder = new File(sourceDirectory);
         File destFolder = new File(destinationDirectory);
 
         //make sure source exists
-        if(!srcFolder.exists()) {
+        if (!srcFolder.exists()) {
             System.out.println("Directory " + sourceDirectory + " does not exist and could not be copied.");
             System.exit(0);
-        }else{
+        } else {
             try {
-                copyFolder(srcFolder,destFolder);
-            } catch(IOException e){
+                copyFolder(srcFolder, destFolder);
+            } catch (IOException e) {
                 e.printStackTrace();
                 System.exit(0);
             }
@@ -987,15 +1037,15 @@ public class SiloUtil {
     public static void copyFolder(File src, File dest)
         // source: http://www.mkyong.com/java/how-to-copy-directory-in-java/
             throws IOException {
-        if(src.isDirectory()){
+        if (src.isDirectory()) {
             // if directory does not exist, create it
-            if(!dest.exists()){
+            if (!dest.exists()) {
                 boolean directoryCreated = dest.mkdir();
                 if (!directoryCreated) logger.warn("Could not create directory for copying: " + dest.toString());
             }
             // get list of directory files
             String files[] = src.list();
-            for (String file: files) {
+            for (String file : files) {
                 //construct the src and dest file structure
                 File srcFile = new File(src, file);
                 File destFile = new File(dest, file);
@@ -1009,7 +1059,7 @@ public class SiloUtil {
             byte[] buffer = new byte[1024];
             int length;
             //copy the file content in bytes
-            while ((length = in.read(buffer)) > 0){
+            while ((length = in.read(buffer)) > 0) {
                 out.write(buffer, 0, length);
             }
             in.close();
@@ -1018,7 +1068,7 @@ public class SiloUtil {
     }
 
 
-    public static Matrix convertOmxToMatrix (OmxMatrix omxMatrix) {
+    public static Matrix convertOmxToMatrix(OmxMatrix omxMatrix) {
         // convert OMX matrix into java matrix
 
         OmxHdf5Datatype.OmxJavaType type = omxMatrix.getOmxJavaType();
@@ -1046,7 +1096,7 @@ public class SiloUtil {
     }
 
 
-    public static int[] createIndexArray (int[] array) {
+    public static int[] createIndexArray(int[] array) {
         // create indexArray for array
 
         int[] index = new int[getHighestVal(array) + 1];
@@ -1060,7 +1110,7 @@ public class SiloUtil {
     public static int[] idendifyUniqueValues(int[] array) {
         // return array of unique values found in array
         ArrayList<Integer> values = new ArrayList<>();
-        for (int value: array) {
+        for (int value : array) {
             if (!values.contains(value)) values.add(value);
         }
         return convertIntegerArrayListToArray(values);
@@ -1070,7 +1120,7 @@ public class SiloUtil {
     public static TableDataSet initializeTableDataSet(TableDataSet tableDataSet, String[] labels, int[] ids) {
         //method to initialize the error matrix
         tableDataSet.appendColumn(ids, "ID");
-        for (String attribute : labels){
+        for (String attribute : labels) {
             float[] dummy = SiloUtil.createArrayWithValue(tableDataSet.getRowCount(), 0f);
             tableDataSet.appendColumn(dummy, attribute);
         }
@@ -1078,7 +1128,7 @@ public class SiloUtil {
         return tableDataSet;
     }
 
-    static public String customFormat(String pattern, double value ) {
+    static public String customFormat(String pattern, double value) {
         // function copied from: http://docs.oracle.com/javase/tutorial/java/data/numberformat.html
         // 123456.789 ###,###.###  123,456.789 The pound sign (#) denotes a digit, the comma is a placeholder for the grouping separator, and the period is a placeholder for the decimal separator.
         // 123456.789 ###.##       123456.79   The value has three digits to the right of the decimal point, but the pattern has only two. The format method handles this by rounding up.
@@ -1088,16 +1138,16 @@ public class SiloUtil {
         return myFormatter.format(value);
     }
 
-    public static int[] obtainColumnFromArray(int[][] array, int rows, int index){
+    public static int[] obtainColumnFromArray(int[][] array, int rows, int index) {
         int[] column = new int[rows];
-        for(int i = 0; i < column.length; i++){
+        for (int i = 0; i < column.length; i++) {
             column[i] = array[i][index];
         }
         return column;
     }
 
 
-    public static void closeAllFiles (long startTime, TimeTracker timeTracker) {
+    public static void closeAllFiles(long startTime, TimeTracker timeTracker) {
         // run this method whenever SILO closes, regardless of whether SILO completed successfully or SILO crashed
         trackingFile("close");
         SummarizeData.resultFileSpatial("close");
@@ -1109,12 +1159,12 @@ public class SiloUtil {
         SiloUtil.writeOutTimeTracker(timeTracker);
         LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
         org.apache.logging.log4j.core.Logger root = LoggerContext.getContext(false).getRootLogger();
-        Appender app = root.getAppenders().get(LOG_FILE_NAME);
+        Appender app = root.getAppenders().get("siloLog");
         if (app != null) {
             root.removeAppender(app);
             app.stop();
         }
-        app = root.getAppenders().get(LOG_WARN_FILE_NAME);
+        app = root.getAppenders().get("siloWarnLog");
         if (app != null) {
             root.removeAppender(app);
             app.stop();
@@ -1122,16 +1172,16 @@ public class SiloUtil {
     }
 
 
-    public static boolean modelStopper (String action) {
+    public static boolean modelStopper(String action) {
         // provide option for a clean model stop after every simulation period is completed
-        String fileName = Properties.get().main.baseDirectory + "/scenOutput/" + Properties.get().main.scenarioName +  "/status.csv";
+        String fileName = Properties.get().main.baseDirectory + "/scenOutput/" + Properties.get().main.scenarioName + "/status.csv";
         if (action.equalsIgnoreCase("initialize")) {
             PrintWriter pw = openFileForSequentialWriting(fileName, false);
             pw.println("Status");
             pw.println("continue");
             pw.close();
         } else if (action.equalsIgnoreCase("removeFile")) {
-            deleteFile (fileName);
+            deleteFile(fileName);
         } else {
             TableDataSet status = readCSVfile(fileName);
             return !status.getStringValueAt(1, "Status").equalsIgnoreCase("continue");
@@ -1140,7 +1190,7 @@ public class SiloUtil {
     }
 
 
-    public static void summarizeMicroData (int year, ModelContainer modelContainer, DataContainer dataContainer) {
+    public static void summarizeMicroData(int year, ModelContainer modelContainer, DataContainer dataContainer) {
         // aggregate micro data
 
         if (trackHh != -1 || trackPp != -1 || trackDd != -1)
@@ -1156,7 +1206,7 @@ public class SiloUtil {
     }
 
 
-    public static void writeOutTimeTracker (TimeTracker timeTracker) {
+    public static void writeOutTimeTracker(TimeTracker timeTracker) {
         // write file summarizing run times
 
         int startYear = Properties.get().main.startYear;
