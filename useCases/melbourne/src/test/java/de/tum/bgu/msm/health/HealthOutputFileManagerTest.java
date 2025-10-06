@@ -352,13 +352,13 @@ class HealthOutputFileManagerTest {
     private void createTestFile(String filePath) throws IOException {
         File file = new File(filePath);
         file.getParentFile().mkdirs();
-
+        
         // Create file with some content so it's not empty (length > 0)
         try (FileWriter writer = new FileWriter(file)) {
             writer.write("test,data\n");
             writer.write("sample,content\n");
         }
-
+        
         assertTrue(file.exists(), "Test file should be created: " + filePath);
         assertTrue(file.length() > 0, "Test file should have content: " + filePath);
     }

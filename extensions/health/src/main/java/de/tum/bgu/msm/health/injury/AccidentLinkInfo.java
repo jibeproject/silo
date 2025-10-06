@@ -44,9 +44,9 @@ public class AccidentLinkInfo {
 //
 //	private  Map<AccidentType, Map<Integer, Double>> severeFatalCasualityRateByAccidentTypeByTime = new HashMap<>();
 
-	private  Map<AccidentType, OpenIntFloatHashMap> lightCasualityExposureByAccidentTypeByTime = new HashMap<>();
+	private  Map<AccidentType, OpenIntFloatHashMap> lightCasualtyExposureByAccidentTypeByTime = new HashMap<>();
 
-	private  Map<AccidentType, OpenIntFloatHashMap> severeFatalCasualityExposureByAccidentTypeByTime = new HashMap<>();
+	private  Map<AccidentType, OpenIntFloatHashMap> severeFatalCasualtyExposureByAccidentTypeByTime = new HashMap<>();
 
 	public AccidentLinkInfo(Id<Link> linkId) {
 		this.linkId = linkId;
@@ -77,11 +77,11 @@ public class AccidentLinkInfo {
 //	}
 
 	public Map<AccidentType, OpenIntFloatHashMap> getLightCasualtyExposureByAccidentTypeByTime() {
-		return lightCasualityExposureByAccidentTypeByTime;
+		return lightCasualtyExposureByAccidentTypeByTime;
 	}
 
 	public Map<AccidentType, OpenIntFloatHashMap> getSevereFatalCasualtyExposureByAccidentTypeByTime() {
-		return severeFatalCasualityExposureByAccidentTypeByTime;
+		return severeFatalCasualtyExposureByAccidentTypeByTime;
 	}
 }
 

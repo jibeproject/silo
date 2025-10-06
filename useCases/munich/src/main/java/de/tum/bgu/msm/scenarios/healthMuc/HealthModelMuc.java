@@ -397,7 +397,7 @@ public class HealthModelMuc extends AbstractModel implements ModelUpdateListener
     private double[] getLinkSevereFatalInjuryRisk(Mode mode, int hour, LinkInfo linkInfo) {
         double severeInjuryRisk;
         double fatalityRisk;
-        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime();
+        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime();
         switch (mode){
             case autoDriver:
             case autoPassenger:

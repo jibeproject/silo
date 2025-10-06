@@ -107,7 +107,7 @@ public class AccidentModelMCR extends AbstractModel implements ModelUpdateListen
             for (Id<Link> linkId : model.getAccidentsContext().getLinkId2info().keySet()) {
                 //((de.tum.bgu.msm.scenarios.health.HealthDataContainerImpl)dataContainer).getLinkInfoByDay().get(day).get(linkId).setLightCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getLightCasualityExposureByAccidentTypeByTime());
                 //((DataContainerHealth) dataContainer).getLinkInfo().get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualityExposureByAccidentTypeByTime());
-                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualtyExposureByAccidentTypeByTime());
+                ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(day).get(linkId).setSevereFatalCasualtyExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualtyExposureByAccidentTypeByTime());
             }
 
             logger.info("====================");
@@ -139,7 +139,7 @@ public class AccidentModelMCR extends AbstractModel implements ModelUpdateListen
                     for (int hour = 0; hour < 24; hour++) {
                         // Retrieve the hourly risk map for the accidentType, defaulting to an empty OpenIntFloatHashMap
                         OpenIntFloatHashMap hourlyRiskMap = linkInfo
-                                .getSevereFatalCasualityExposureByAccidentTypeByTime()
+                                .getSevereFatalCasualtyExposureByAccidentTypeByTime()
                                 .getOrDefault(accidentType, new OpenIntFloatHashMap());
 
                         // Add the risk for the current hour, defaulting to 0.0 if not present

@@ -1743,21 +1743,21 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         switch (mode) {
             case "car":
                 linkInjuryRisk =
-                        getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.CAR_ONEWAY, time) +
-                                getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.CAR_TWOWAY, time);
                 break;
             case "bike":
                 linkInjuryRisk =
-                        getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.BIKE_MAJOR, time) +
-                                getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.BIKE_MINOR, time);
                 break;
             case "walk":
                 linkInjuryRisk =
-                        getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.PED, time);
                 break;
             default:
@@ -1772,21 +1772,21 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             case autoDriver:
             case autoPassenger:
                 linkInjuryRisk =
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.CAR_ONEWAY, time) +
-                                getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.CAR_TWOWAY, time);
                 break;
             case bicycle:
                 linkInjuryRisk =
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.BIKE_MAJOR, time) +
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.BIKE_MINOR, time);
                 break;
             case walk:
                 linkInjuryRisk =
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.PED, time);
                 break;
             default:
@@ -1821,7 +1821,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         double severeInjuryRisk;
         double fatalityRisk;
-        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime();
+        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime();
 
         switch (mode){
             case autoPassenger:

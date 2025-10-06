@@ -71,7 +71,7 @@ public class AccidentModel extends AbstractModel implements ModelUpdateListener 
 //                        setLightCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getLightCasualityExposureByAccidentTypeByTime());
 //
                 ((DataContainerHealth)dataContainer).getLinkInfo().get(linkId).
-                        setSevereFatalCasualityExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualtyExposureByAccidentTypeByTime());
+                        setSevereFatalCasualtyExposureByAccidentTypeByTime(model.getAccidentsContext().getLinkId2info().get(linkId).getSevereFatalCasualtyExposureByAccidentTypeByTime());
             }
             model.getAccidentsContext().reset();
     }
