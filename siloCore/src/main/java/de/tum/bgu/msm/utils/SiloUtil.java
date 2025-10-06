@@ -62,19 +62,43 @@ public class SiloUtil {
 
     /**
      * Determine the runner class name from the call stack
-     * Looks for common SILO runner patterns like SiloMEL, RunExposureHealthOffline, etc.
+     * Looks for the actual main runner class, prioritizing classes with main methods
      */
     private static String getRunnerClassName() {
         StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
 
-        // Look through the stack trace for known runner patterns
+        // First pass: Look for the class with the main method (highest priority)
+        for (StackTraceElement element : stackTrace) {
+            if ("main".equals(element.getMethodName())) {
+                String className = element.getClassName();
+                String simpleClassName = className.substring(className.lastIndexOf('.') + 1);
+
+                // Verify this is a likely runner class, not just any main method
+                if (simpleClassName.startsWith("Run") ||
+                        simpleClassName.startsWith("Silo") ||
+                        simpleClassName.contains("Main") ||
+                        simpleClassName.contains("Runner") ||
+                        className.endsWith("MEL")) {
+                    return simpleClassName;
+                }
+            }
+        }
+
+        // Second pass: Look for runner patterns (excluding utility classes)
         for (StackTraceElement element : stackTrace) {
             String className = element.getClassName();
             String simpleClassName = className.substring(className.lastIndexOf('.') + 1);
 
+            // Skip utility classes that might match patterns
+            if (simpleClassName.equals("SiloUtil") ||
+                    className.contains(".utils.") ||
+                    className.contains(".util.")) {
+                continue;
+            }
+
             // Check for common SILO runner class patterns
-            if (simpleClassName.startsWith("Silo") ||
-                    simpleClassName.startsWith("Run") ||
+            if (simpleClassName.startsWith("Run") ||
+                    (simpleClassName.startsWith("Silo") && !simpleClassName.equals("SiloUtil")) ||
                     simpleClassName.contains("Main") ||
                     simpleClassName.contains("Runner") ||
                     (className.contains("health") && simpleClassName.startsWith("Run")) ||
@@ -83,7 +107,7 @@ public class SiloUtil {
             }
         }
 
-        // Fallback: look for main method
+        // Third pass: Any class with main method as final fallback
         for (StackTraceElement element : stackTrace) {
             if ("main".equals(element.getMethodName())) {
                 String className = element.getClassName();
