@@ -135,7 +135,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             // Readin full network
             // TODO simplify this
             //Set<Id<Link>> allLinks = scenario.getNetwork().getLinks().keySet();
-            Network networkFull = NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile());
+            Network networkFull = ((HealthDataContainerImpl) dataContainer).getNetwork();
 
 
             //clear the health data from last exposure model year
@@ -144,14 +144,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             // process ndvi data
-            processNdviData(NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile()));
+            processNdviData(((HealthDataContainerImpl) dataContainer).getNetwork());
 
             // Initialize the table to count the flows for the injury model
             initializeTrafficFlows();
 
             // assemble travel-activity health exposure data
             for(Day day : simulatedDays){
-                logger.warn("Health model setup for " + day);
+                logger.warn("Setting up health model for {}", day);
 
                 // Use 'thursday' for weekdays in healthDataAssembler, otherwise use the actual day
                 Day dayForHealthData = weekdays.contains(day)
@@ -159,13 +159,13 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         : day;
 
                 loadLinkInfoFromFile(dayForHealthData);
-                logger.warn("Link info for " + dayForHealthData + " loaded.");
+                logger.warn("Link info for {} loaded.", dayForHealthData);
 
                 loadActivityLocationInfoFromFile(dayForHealthData);
-                logger.warn("Activity info for " + dayForHealthData + " loaded.");
+                logger.warn("Activity info for {} loaded.", dayForHealthData);
                 System.gc();
 
-                // Pre-compute risk values once per day to eliminate getRiskValue2 performance bottleneck
+                // Pre-compute risk values
                 preComputeRiskValues(day, networkFull);
 
                 logger.warn("Run health exposure model for " + day);
@@ -202,8 +202,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             logger.warn("No exposure model for mode: " + mode);
                     }
                     mitoTrips.clear();
-                    mitoTrips = null; // Optional: nullify if not reused immediately
-                    mitoTrips = new HashMap<>(); // Reinitialize for next mode
+                    mitoTrips = new HashMap<>();
                 }
 
                 // Track completed simulated days
@@ -585,9 +584,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         new LinkInfoReader().readConcentrationData(((DataContainerHealth)dataContainer), outputDirectory + "linkConcentration_" + day + ".csv");
 
-        //we produced concentration from bus vehicle source at link level, currently it is static over days and scenarios.
-        //So add this as an additional concentration to link
-        new LinkInfoReader().readConcentrationData(((DataContainerHealth)dataContainer), properties.healthData.busLinkConcentration);
+//        // concentration from bus vehicle not evaluated for Melbourne
+//        new LinkInfoReader().readConcentrationData(((DataContainerHealth)dataContainer), properties.healthData.busLinkConcentration);
 
         new LinkInfoReader().readNoiseLevelData(((DataContainerHealth)dataContainer), outputDirectory + "matsim/" + latestMatsimYear, day);
 
@@ -1539,7 +1537,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
     public void calculateHomeBasedExposureOnly(int year){
         latestMatsimYear = year;
-        processNdviData(NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile()));
+        processNdviData(((HealthDataContainerImpl) dataContainer).getNetwork());
 
         //assemble person home exposure by day by hour
         for(Day day : Day.values()) {
@@ -1659,44 +1657,60 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         List<String> modes = Arrays.asList("car", "bike", "walk");
 
         long startTime = System.nanoTime();
-        int totalComputations = 0;
-        int nonZeroRiskCount = 0;
+        AtomicInteger totalComputations = new AtomicInteger(0);
+        AtomicInteger nonZeroRiskCount = new AtomicInteger(0);
 
-        for (String mode : modes) {
-            Map<Id<Link>, Map<Integer, Double>> linkHourRiskMap = new ConcurrentHashMap<>();
+        // Process modes in parallel to reduce overall computation time
+        modes.parallelStream().forEach(mode -> {
+            // Use a regular HashMap for thread-local computation, then put once into ConcurrentHashMap
+            Map<Id<Link>, Map<Integer, Double>> linkHourRiskMap = new HashMap<>();
 
-            for (Link link : network.getLinks().values()) {
-                LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
-                        .getLinkInfoByDay(dayForHealthData)
-                        .get(link.getId());
+            // Get all relevant links upfront to avoid repeated filtering
+            List<Link> relevantLinks = network.getLinks().values().stream()
+                .filter(link -> {
+                    LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
+                            .getLinkInfoByDay(dayForHealthData)
+                            .get(link.getId());
+                    return linkInfo != null;
+                })
+                .collect(Collectors.toList());
 
-                if (linkInfo == null) {
-                    continue;
-                }
+            // Process links in parallel for each mode
+            Map<Id<Link>, Map<Integer, Double>> concurrentResults = relevantLinks.parallelStream()
+                .collect(Collectors.toConcurrentMap(
+                    Link::getId,
+                    link -> {
+                        LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
+                                .getLinkInfoByDay(dayForHealthData)
+                                .get(link.getId());
 
-                Map<Integer, Double> hourRiskMap = new ConcurrentHashMap<>();
+                        // Pre-allocate the hour map with known size
+                        Map<Integer, Double> hourRiskMap = new HashMap<>(24);
 
-                for (int hour = 0; hour < 24; hour++) {
-                    double linkRisk = getLinkInjuryRisk2(mode, hour, linkInfo);
-                    hourRiskMap.put(hour, linkRisk);
-                    totalComputations++;
+                        for (int hour = 0; hour < 24; hour++) {
+                            double linkRisk = getLinkInjuryRisk2(mode, hour, linkInfo);
+                            hourRiskMap.put(hour, linkRisk);
+                            totalComputations.incrementAndGet();
 
-                    if (linkRisk > 0) {
-                        nonZeroRiskCount++;
+                            if (linkRisk > 0) {
+                                nonZeroRiskCount.incrementAndGet();
+                            }
+                        }
+
+                        return hourRiskMap;
                     }
-                }
+                ));
 
-                linkHourRiskMap.put(link.getId(), hourRiskMap);
-            }
-
-            preComputedRisksByModeLinkHour.put(mode, linkHourRiskMap);
-        }
+            // Single atomic operation to update the main map
+            preComputedRisksByModeLinkHour.put(mode, concurrentResults);
+        });
 
         long endTime = System.nanoTime();
         double computationTimeSeconds = (endTime - startTime) / 1e9;
 
         logger.info("Pre-computed {} risk values for {} ({} non-zero risk links)",
-                   totalComputations, day, nonZeroRiskCount);
+                   totalComputations.get(), day, nonZeroRiskCount.get()
+                );
     }
 
     /**

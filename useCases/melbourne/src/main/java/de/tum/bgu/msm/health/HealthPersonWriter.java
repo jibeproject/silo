@@ -32,7 +32,25 @@ public class HealthPersonWriter implements PersonWriter {
     public void writePersonExposure(String path) {
 
         logger.info("  Writing person exposure file to " + path);
-        PrintWriter pwp = SiloUtil.openFileForSequentialWriting(path, false);
+        PrintWriter pwp;
+        pwp = SiloUtil.openFileForSequentialWriting(path, false);
+        if (pwp == null) {
+            // Create date suffix with current timestamp
+            String dateSuffix = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"));
+
+            // Insert suffix before file extension
+            String newPath;
+            int lastDotIndex = path.lastIndexOf('.');
+            if (lastDotIndex != -1) {
+                newPath = path.substring(0, lastDotIndex) + "_" + dateSuffix + path.substring(lastDotIndex);
+            } else {
+                newPath = path + "_" + dateSuffix;
+            }
+
+            // Try with the modified path
+            pwp = SiloUtil.openFileForSequentialWriting(newPath, false);
+        }
         pwp.print("id,hhid,age,gender,relationShip,occupation,driversLicense,workplace,income");
         pwp.print(",");
         pwp.print("schoolId");
