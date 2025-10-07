@@ -283,20 +283,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             double nonZeroFlowRisk = 0.0;
             int zeroFlowCount = 0;
             int nonZeroFlowCount = 0;
-
-            // Track min/max for zero flow links
-            double minZeroFlowRisk = Double.MAX_VALUE;
-            double maxZeroFlowRisk = Double.MIN_VALUE;
-
-            // Track min/max for non-zero flow links
-            double minNonZeroFlowRisk = Double.MAX_VALUE;
-            double maxNonZeroFlowRisk = Double.MIN_VALUE;
+            int zeroFlowNonZeroRiskCount = 0;
+            int nonZeroFlowNonZeroRiskCount = 0;
 
             for (int hour = 0; hour < 24; hour++) {
                 // Loop over all links in the MATSim network
                 for (Link link : network.getLinks().values()) {
-                    // Use pre-computed risk value instead of calling getLinkInjuryRisk2 repeatedly
-                    // This eliminates the 19.62% CPU bottleneck from getRiskValue2
                     double linkRisk = getPreComputedRiskValue(mode, link.getId(), hour);
 
                     // Get flow for the day, mode, link, and hour
@@ -310,35 +302,27 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     if (flow == 0) {
                         zeroFlowRisk += linkRisk;
                         zeroFlowCount++;
-                        if (linkRisk < minZeroFlowRisk) minZeroFlowRisk = linkRisk;
-                        if (linkRisk > maxZeroFlowRisk) maxZeroFlowRisk = linkRisk;
+                        if (linkRisk > 0) {
+                            zeroFlowNonZeroRiskCount++;
+                        }
                     } else {
                         nonZeroFlowRisk += linkRisk;
                         nonZeroFlowCount++;
-                        if (linkRisk < minNonZeroFlowRisk) minNonZeroFlowRisk = linkRisk;
-                        if (linkRisk > maxNonZeroFlowRisk) maxNonZeroFlowRisk = linkRisk;
+                        if (linkRisk > 0) {
+                            nonZeroFlowNonZeroRiskCount++;
+                        }
                     }
                 }
-            }
-
-            // Handle cases where no links were found in each category
-            if (zeroFlowCount == 0) {
-                minZeroFlowRisk = 0.0;
-                maxZeroFlowRisk = 0.0;
-            }
-            if (nonZeroFlowCount == 0) {
-                minNonZeroFlowRisk = 0.0;
-                maxNonZeroFlowRisk = 0.0;
             }
 
             // Print results for the current mode
             System.out.println("Analysis for day: " + day + ", mode: " + mode);
             System.out.println("Links with Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Min Risk: %.4f, Max Risk: %.4f%n",
-                    zeroFlowRisk, zeroFlowCount, zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0, minZeroFlowRisk, maxZeroFlowRisk);
+            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Non-Zero Risk Count: %d%n",
+                    zeroFlowRisk, zeroFlowCount, zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0, zeroFlowNonZeroRiskCount);
             System.out.println("Links with Non-Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Min Risk: %.4f, Max Risk: %.4f%n",
-                    nonZeroFlowRisk, nonZeroFlowCount, nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0, minNonZeroFlowRisk, maxNonZeroFlowRisk);
+            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Non-Zero Risk Count: %d%n",
+                    nonZeroFlowRisk, nonZeroFlowCount, nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0, nonZeroFlowNonZeroRiskCount);
             System.out.println(); // Empty line for readability
         }
     }
@@ -1676,6 +1660,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         long startTime = System.nanoTime();
         int totalComputations = 0;
+        int nonZeroRiskCount = 0;
 
         for (String mode : modes) {
             Map<Id<Link>, Map<Integer, Double>> linkHourRiskMap = new ConcurrentHashMap<>();
@@ -1695,6 +1680,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     double linkRisk = getLinkInjuryRisk2(mode, hour, linkInfo);
                     hourRiskMap.put(hour, linkRisk);
                     totalComputations++;
+
+                    if (linkRisk > 0) {
+                        nonZeroRiskCount++;
+                    }
                 }
 
                 linkHourRiskMap.put(link.getId(), hourRiskMap);
@@ -1706,8 +1695,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         long endTime = System.nanoTime();
         double computationTimeSeconds = (endTime - startTime) / 1e9;
 
-        logger.info("Pre-computed {} risk values for {}",
-                   totalComputations, day);
+        logger.info("Pre-computed {} risk values for {} ({} non-zero risk links)",
+                   totalComputations, day, nonZeroRiskCount);
     }
 
     /**
