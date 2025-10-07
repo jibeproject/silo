@@ -158,10 +158,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         ? Day.thursday
                         : day;
 
-                replyLinkInfoFromFile(dayForHealthData);
+                loadLinkInfoFromFile(dayForHealthData);
                 logger.warn("Link info for " + dayForHealthData + " loaded.");
 
-                replyActivityLocationInfoFromFile(dayForHealthData);
+                loadActivityLocationInfoFromFile(dayForHealthData);
                 logger.warn("Activity info for " + dayForHealthData + " loaded.");
                 System.gc();
 
@@ -209,6 +209,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 // Track completed simulated days
                 completedDays.add(day);
 
+                // Load existing traffic flow data BEFORE risk analysis
+                loadExistingTrafficFlowData(year, day, networkFull);
+
                 //
                 checkAccumulatedRisksByModeDayHour(networkFull, day, (HealthDataContainerImpl) dataContainer, trafficFlowsByDayModeLinkHour);
 
@@ -218,7 +221,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 writeAndClearTrafficFlows(year, networkFull, day);
 
                 // Reset
-                ((DataContainerHealth) dataContainer).getLinkInfo().values().forEach(linkInfo -> {linkInfo.reset();});
+                ((DataContainerHealth) dataContainer).getLinkInfo().values().forEach(LinkInfo::reset);
 
                 //
                 /*  COMMENTED OUT FOR MANCHESTER
@@ -238,7 +241,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                  */
 
                 //
-                ((DataContainerHealth) dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
+                ((DataContainerHealth) dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
                 //System.gc();
             }
 
@@ -250,9 +253,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             // assemble home location health exposure data
             for(Day day : Day.values()){
-                replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
+                loadActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
                 calculatePersonHealthExposuresAtHome(day);
-                ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
+                ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
                 System.gc();
             }
 
@@ -281,6 +284,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             int zeroFlowCount = 0;
             int nonZeroFlowCount = 0;
 
+            // Track min/max for zero flow links
+            double minZeroFlowRisk = Double.MAX_VALUE;
+            double maxZeroFlowRisk = Double.MIN_VALUE;
+
+            // Track min/max for non-zero flow links
+            double minNonZeroFlowRisk = Double.MAX_VALUE;
+            double maxNonZeroFlowRisk = Double.MIN_VALUE;
+
             for (int hour = 0; hour < 24; hour++) {
                 // Loop over all links in the MATSim network
                 for (Link link : network.getLinks().values()) {
@@ -299,21 +310,35 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     if (flow == 0) {
                         zeroFlowRisk += linkRisk;
                         zeroFlowCount++;
+                        if (linkRisk < minZeroFlowRisk) minZeroFlowRisk = linkRisk;
+                        if (linkRisk > maxZeroFlowRisk) maxZeroFlowRisk = linkRisk;
                     } else {
                         nonZeroFlowRisk += linkRisk;
                         nonZeroFlowCount++;
+                        if (linkRisk < minNonZeroFlowRisk) minNonZeroFlowRisk = linkRisk;
+                        if (linkRisk > maxNonZeroFlowRisk) maxNonZeroFlowRisk = linkRisk;
                     }
                 }
+            }
+
+            // Handle cases where no links were found in each category
+            if (zeroFlowCount == 0) {
+                minZeroFlowRisk = 0.0;
+                maxZeroFlowRisk = 0.0;
+            }
+            if (nonZeroFlowCount == 0) {
+                minNonZeroFlowRisk = 0.0;
+                maxNonZeroFlowRisk = 0.0;
             }
 
             // Print results for the current mode
             System.out.println("Analysis for day: " + day + ", mode: " + mode);
             System.out.println("Links with Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f%n",
-                    zeroFlowRisk, zeroFlowCount, zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0);
+            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Min Risk: %.4f, Max Risk: %.4f%n",
+                    zeroFlowRisk, zeroFlowCount, zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0, minZeroFlowRisk, maxZeroFlowRisk);
             System.out.println("Links with Non-Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f%n",
-                    nonZeroFlowRisk, nonZeroFlowCount, nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0);
+            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Min Risk: %.4f, Max Risk: %.4f%n",
+                    nonZeroFlowRisk, nonZeroFlowCount, nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0, minNonZeroFlowRisk, maxNonZeroFlowRisk);
             System.out.println(); // Empty line for readability
         }
     }
@@ -455,35 +480,26 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             return null; // or throw an exception
         }
 
-        switch (modeStr.toLowerCase()) {
-            case "car":
-                return Mode.autoDriver;
-            case "bike":
-                return Mode.bicycle;
-            case "walk":
-                return Mode.walk;
-            case "pt":
-                return Mode.pt;
-            default:
+        return switch (modeStr.toLowerCase()) {
+            case "car" -> Mode.autoDriver;
+            case "bike" -> Mode.bicycle;
+            case "walk" -> Mode.walk;
+            case "pt" -> Mode.pt;
+            default -> {
                 logger.warn("Unknown mode string: " + modeStr);
-                return null; // or throw an exception
-        }
+                yield null;
+            }
+        };
     }
 
     private String getAdjustedModeName(Mode mode) {
-        switch (mode) {
-            case autoDriver:
-            case autoPassenger:
-                return "car";
-            case bicycle:
-                return "bike";
-            case walk:
-                return "walk";
-            case pt:
-                return "pt";
-            default:
-                throw new RuntimeException("Undefined mode " + mode);
-        }
+        return switch (mode) {
+            case autoDriver, autoPassenger -> "car";
+            case bicycle -> "bike";
+            case walk -> "walk";
+            case pt -> "pt";
+            default -> throw new RuntimeException("Undefined mode " + mode);
+        };
     }
 
     private void initializeTrafficFlows() {
@@ -498,15 +514,15 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void writeAndClearTrafficFlows(int year, Network network, Day day) {
-        loadExistingTrafficFlowData(year, day, network);
 
         List<String> modesToProcess = determineModesToProcess(year, day);
 
         for (String modeAdjusted : modesToProcess) {
             writeTrafficFlowsToCSV(year, day, modeAdjusted, network);
-            trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
         }
-        trafficFlowsByDayModeLinkHour.remove(day); // Clear entire day
+
+        // Clear traffic flow data for the day to free memory
+        trafficFlowsByDayModeLinkHour.remove(day);
         System.gc();
     }
 
@@ -574,7 +590,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
     }
 
-    private void replyLinkInfoFromFile(Day day) {
+    private void loadLinkInfoFromFile(Day day) {
         // Check cache first to avoid repeated loading
         if (linkInfoLoadedCache.getOrDefault(day, false)) {
             logger.info("Link info for {} already loaded from cache", day);
@@ -596,7 +612,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info("Initialized Link Info for " + ((DataContainerHealth) dataContainer).getLinkInfo().size() + " links (cached for reuse)");
     }
 
-    private void replyActivityLocationInfoFromFile(Day day) {
+    private void loadActivityLocationInfoFromFile(Day day) {
         // Check cache first to avoid repeated loading
         if (activityLocationInfoLoadedCache.getOrDefault(day, false)) {
             logger.info("Activity location info for {} already loaded from cache", day);
@@ -807,8 +823,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             double legPartExposurePm25 = PollutionExposure.getLinkExposurePm25(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_PM25, legTime_s, legMarginalMet);
             double legPartExposureNo2 = PollutionExposure.getLinkExposureNo2(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_NO2,legTime_s, legMarginalMet);
 
-            legExposurePm25ByHour[exactWeekHour] += legPartExposurePm25;
-            legExposureNo2ByHour[exactWeekHour] += legPartExposureNo2;
+            legExposurePm25ByHour[exactWeekHour] += (float) legPartExposurePm25;
+            legExposureNo2ByHour[exactWeekHour] += (float) legPartExposureNo2;
 
             legExposurePm25 += legPartExposurePm25;
             legExposureNo2 += legPartExposureNo2;
@@ -1144,14 +1160,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     linkExposurePm25 = PollutionExposure.getLinkExposurePm25(mode, linkConcentrationPm25, durationInThisHour * 3600, linkMarginalMet);
                     linkExposureNo2 =PollutionExposure.getLinkExposureNo2(mode, linkConcentrationNo2, durationInThisHour * 3600, linkMarginalMet);
 
-                    pathExposurePm25ByHour[exactWeekHour] += linkExposurePm25;
-                    pathExposureNo2ByHour[exactWeekHour] += linkExposureNo2;
+                    pathExposurePm25ByHour[exactWeekHour] += (float) linkExposurePm25;
+                    pathExposureNo2ByHour[exactWeekHour] += (float) linkExposureNo2;
 
                     //TODO: bike/walk-only link has no noise emission (noise produced on that link). currently we assume 0 noise level while travelling on those links.
                     // Later, we can do geo-spatialling and associate these link to nearest car link? or Instead of using noise emission, we consider each link as noise receivers and do proper noise exposure
                     if(!linkInfo.getNoiseLevel2TimeBin().isEmpty()){
                         linkExposureNoise = linkInfo.getNoiseLevel2TimeBin().get(exactDayHour) * durationInThisHour;
-                        pathExposureNoiseByHour[exactWeekHour] += linkExposureNoise;
+                        pathExposureNoiseByHour[exactWeekHour] += (float) linkExposureNoise;
                     }
 
                     pathExposurePm25 += linkExposurePm25;
@@ -1505,8 +1521,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     min_ventilation_rate = 0.61;
                 }
 
-                sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/Math.max(1, hourOccupied[weekHour])/min_ventilation_rate;
-                sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/Math.max(1, hourOccupied[weekHour])/min_ventilation_rate;
+                sumExposurePM25_normalized += (float) (weeklyPollutionExposures.get("pm2.5")[weekHour]/Math.max(1, hourOccupied[weekHour])/min_ventilation_rate);
+                sumExposureNo2_normalized += (float) (weeklyPollutionExposures.get("no2")[weekHour]/Math.max(1, hourOccupied[weekHour])/min_ventilation_rate);
 
 
                 float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]/Math.max(1, hourOccupied[weekHour])));
@@ -1543,7 +1559,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         //assemble person home exposure by day by hour
         for(Day day : Day.values()) {
-            replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
+            loadActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
             for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
 
                 double minutesAtHome = 0.;
@@ -1653,12 +1669,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
     }
 
-    /**
-     * Pre-computes risk values for all modes, links, and hours to eliminate getRiskValue2 performance bottleneck.
-     * This method is called once per day to cache all risk calculations, avoiding millions of repeated calls.
-     */
     private void preComputeRiskValues(Day day, Network network) {
-        logger.info("Pre-computing risk values for day: {} to optimize performance", day);
 
         Day dayForHealthData = weekdays.contains(day) ? Day.thursday : day;
         List<String> modes = Arrays.asList("car", "bike", "walk");
@@ -1695,8 +1706,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         long endTime = System.nanoTime();
         double computationTimeSeconds = (endTime - startTime) / 1e9;
 
-        logger.info("Pre-computed {} risk values for day: {} in {:.2f} seconds",
-                   totalComputations, day, computationTimeSeconds);
+        logger.info("Pre-computed {} risk values for {}",
+                   totalComputations, day);
     }
 
     /**
