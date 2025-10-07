@@ -180,7 +180,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             if (fileManager.healthIndicatorFileExists(year, day, mode)) {
                                 logger.info("Loading existing health indicator data for day: {}, mode: {}", day, mode);
                                 // Load existing health indicator data instead of skipping
-                                fileManager.loadHealthIndicatorDataIfExists(year, day, mode);
+                                fileManager.loadHealthIndicatorDataIfExists(year, day, mode, dataContainer, mitoTripsAll);
                                 continue; // Continue to next mode instead of breaking out entirely
                             }
 
