@@ -12,6 +12,7 @@ import de.tum.bgu.msm.properties.PropertiesUtil;
 import omx.OmxMatrix;
 import omx.hdf5.OmxHdf5Datatype;
 import org.apache.commons.lang3.SystemUtils;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
@@ -21,7 +22,10 @@ import org.apache.logging.log4j.core.config.Configuration;
 import org.matsim.core.controler.Controler;
 
 import java.io.*;
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
 import java.net.URL;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.text.DecimalFormat;
 import java.util.*;
@@ -36,6 +40,8 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 public class SiloUtil {
 
     private final static Logger logger = LogManager.getLogger(SiloUtil.class);
+    // Add LogBuffer to capture early messages
+    private static final LogBuffer earlyMessageBuffer = new LogBuffer();
 
     private static final String TIME_TRACKER_FILE = "timeTracker.csv";
     private static Random rand;
@@ -44,6 +50,98 @@ public class SiloUtil {
     public static int trackDd;
     public static int trackJj;
     public static PrintWriter trackWriter;
+    public static String LOG_FILE_NAME = "siloLog";
+    public static String WARN_LOG_FILE_NAME = "siloWarnLog";
+
+    // Add static initializer to set up early logging capture
+    static {
+        // Redirect early logging through our buffer
+        System.setProperty("log4j.configurationFile", "log4j2-console.xml");
+        LoggerContext.getContext(false).reconfigure();
+
+        // Capture command line for later logging
+        captureCommandLine();
+    }
+
+    // Store the command line
+    private static String commandLine = "";
+
+    /**
+     * Captures the Java command line that started the application
+     */
+    private static void captureCommandLine() {
+        try {
+            RuntimeMXBean runtimeMxBean = ManagementFactory.getRuntimeMXBean();
+            List<String> arguments = runtimeMxBean.getInputArguments();
+            String javaCommand = System.getProperty("sun.java.command");
+
+            StringBuilder cmdBuilder = new StringBuilder();
+            cmdBuilder.append("java ");
+
+            // Add JVM arguments
+            for (String arg : arguments) {
+                cmdBuilder.append(arg).append(" ");
+            }
+
+            // Add main class and program arguments
+            if (javaCommand != null) {
+                cmdBuilder.append(javaCommand);
+            }
+
+            commandLine = cmdBuilder.toString();
+            // Capture in early log buffer
+            captureLog(Level.INFO, "Command line: " + commandLine);
+        } catch (Exception e) {
+            captureLog(Level.WARN, "Failed to capture command line: " + e.getMessage());
+        }
+    }
+
+    /**
+     * LogBuffer class to capture early log messages before the logging system is fully initialized
+     */
+    private static class LogBuffer {
+        private final List<LogMessage> buffer = new ArrayList<>();
+        private boolean initialized = false;
+
+        private static class LogMessage {
+            final Level level;
+            final String message;
+
+            LogMessage(Level level, String message) {
+                this.level = level;
+                this.message = message;
+            }
+        }
+
+        public synchronized void capture(Level level, String message) {
+            if (!initialized) {
+                buffer.add(new LogMessage(level, message));
+                // Also print to console to ensure visibility during initialization
+                System.out.println("[EARLY LOG] " + level + ": " + message);
+            }
+        }
+
+        public synchronized void flushToLogger(Logger logger) {
+            for (LogMessage msg : buffer) {
+                if (msg.level == Level.INFO) {
+                    logger.info(msg.message);
+                } else if (msg.level == Level.WARN) {
+                    logger.warn(msg.message);
+                } else if (msg.level == Level.ERROR) {
+                    logger.error(msg.message);
+                } else if (msg.level == Level.DEBUG) {
+                    logger.debug(msg.message);
+                }
+            }
+            buffer.clear();
+            initialized = true;
+        }
+    }
+
+    // Static method to capture logs early
+    public static void captureLog(Level level, String message) {
+        earlyMessageBuffer.capture(level, message);
+    }
 
     /**
      * Generate timestamped log filename with scenario name and runner class
@@ -153,7 +251,7 @@ public class SiloUtil {
         FileAppender appender;
         { // the "all" logfile
             String logFileName = generateLogFileName(scenarioName, "");
-            appender = FileAppender.newBuilder().setName("siloLog").setLayout(Controler.DEFAULTLOG4JLAYOUT).withFileName(outputDirectory + System.getProperty("file.separator") + logFileName).withAppend(appendToExistingFile).build();
+            appender = FileAppender.newBuilder().setName("siloLog").setLayout(Controler.DEFAULTLOG4JLAYOUT).withFileName(outputDirectory + FileSystems.getDefault().getSeparator() + logFileName).withAppend(appendToExistingFile).build();
             appender.start();
             config.getRootLogger().addAppender(appender, org.apache.logging.log4j.Level.ALL, null);
         }
@@ -167,6 +265,14 @@ public class SiloUtil {
         }
 
         ctx.updateLoggers();
+
+        // Force a reconfiguration to ensure loggers are fully initialized
+        ctx.reconfigure();
+
+        // Flush any early messages that were captured to the log file
+        earlyMessageBuffer.flushToLogger(logger);
+
+        logger.info("Initialising logging: " + outputDirectory + FileSystems.getDefault().getSeparator() + LOG_FILE_NAME + ".log");
     }
 
     public static void loadHdf5Lib() {
@@ -222,7 +328,7 @@ public class SiloUtil {
                     } else {
                         path = url.getFile();
                         System.load(path);
-                    }
+                      }
                 } catch (Throwable e2) {
                     logger.debug("Cannot load 64 bit library. ");
                     path = null;
@@ -1183,12 +1289,23 @@ public class SiloUtil {
         SiloUtil.writeOutTimeTracker(timeTracker);
         LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
         org.apache.logging.log4j.core.Logger root = LoggerContext.getContext(false).getRootLogger();
-        Appender app = root.getAppenders().get("siloLog");
+
+        // Try to get the main log appender, using the file name or default name as a fallback
+        Appender app = root.getAppenders().get(LOG_FILE_NAME);
+        if (app == null) {
+            // Try with the default appender name used during initialization
+            app = root.getAppenders().get("siloLog");
+        }
         if (app != null) {
             root.removeAppender(app);
             app.stop();
         }
-        app = root.getAppenders().get("siloWarnLog");
+
+        app = root.getAppenders().get(WARN_LOG_FILE_NAME);
+        if (app == null) {
+            // Try with the default appender name used during initialization
+            app = root.getAppenders().get("siloWarning");
+        }
         if (app != null) {
             root.removeAppender(app);
             app.stop();

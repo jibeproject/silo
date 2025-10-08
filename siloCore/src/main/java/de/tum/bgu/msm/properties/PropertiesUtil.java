@@ -1,6 +1,7 @@
 package de.tum.bgu.msm.properties;
 
 import de.tum.bgu.msm.utils.SiloUtil;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import java.io.File;
@@ -23,7 +24,10 @@ public class PropertiesUtil {
             bundle.getString(key);
             return getIntProperty(bundle, key);
         } catch (MissingResourceException e) {
-            logger.info("Using default value of " + defaultValue + " for property " + key);
+            String message = "Using default value of " + defaultValue + " for property " + key;
+            // Use the early log buffer to ensure this message is captured
+            SiloUtil.captureLog(Level.INFO, message);
+            logger.info(message);
             printOutProperty(key, defaultValue, true);
             return defaultValue;
         }
@@ -35,9 +39,13 @@ public class PropertiesUtil {
             printOutProperty(key, returnValue, false);
             return returnValue;
         } catch (NumberFormatException e){
-            throw new RuntimeException("Cannot convert property " + key + " to an integer");
+            String message = "Cannot convert property " + key + " to an integer";
+            SiloUtil.captureLog(Level.ERROR, message);
+            throw new RuntimeException(message);
         } catch (MissingResourceException e){
-            throw new RuntimeException("The property " + key + " is not defined and has no default value");
+            String message = "The property " + key + " is not defined and has no default value";
+            SiloUtil.captureLog(Level.ERROR, message);
+            throw new RuntimeException(message);
         }
     }
 
@@ -46,7 +54,9 @@ public class PropertiesUtil {
             bundle.getString(key);
             return getDoubleProperty(bundle, key);
         } catch (MissingResourceException e) {
-            logger.info("Using default value of " + defaultValue + " for property " + key);
+            String message = "Using default value of " + defaultValue + " for property " + key;
+            SiloUtil.captureLog(Level.INFO, message);
+            logger.info(message);
             printOutProperty(key, defaultValue, true);
             return defaultValue;
         }
@@ -58,9 +68,13 @@ public class PropertiesUtil {
             printOutProperty(key, returnValue, false);
             return returnValue;
         } catch (NumberFormatException e){
-            throw new RuntimeException("Cannot convert property " + key + " to a double");
+            String message = "Cannot convert property " + key + " to a double";
+            SiloUtil.captureLog(Level.ERROR, message);
+            throw new RuntimeException(message);
         } catch (MissingResourceException e){
-            throw new RuntimeException("The property " + key + " is not defined and has no default value");
+            String message = "The property " + key + " is not defined and has no default value";
+            SiloUtil.captureLog(Level.ERROR, message);
+            throw new RuntimeException(message);
         }
     }
 
@@ -69,7 +83,9 @@ public class PropertiesUtil {
             bundle.getString(key);
             return getBooleanProperty(bundle, key);
         } catch (MissingResourceException e) {
-            logger.info("Using default value of " + defaultValue + " for property " + key);
+            String message = "Using default value of " + defaultValue + " for property " + key;
+            SiloUtil.captureLog(Level.INFO, message);
+            logger.info(message);
             printOutProperty(key, defaultValue, true);
             return defaultValue;
         }
