@@ -16,6 +16,7 @@ import de.tum.bgu.msm.data.job.*;
 import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.data.travelTimes.TravelTimes;
 import de.tum.bgu.msm.health.data.LinkInfo;
+import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.io.DefaultSpeedReader;
 import de.tum.bgu.msm.health.io.DoseResponseLookupReader;
 import de.tum.bgu.msm.health.io.InjuryRRTableReader;
@@ -37,6 +38,7 @@ import org.matsim.core.network.NetworkUtils;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static de.tum.bgu.msm.util.CsvWriter.writeTableDataSetToCSV;
@@ -133,21 +135,7 @@ public class DataBuilderHealth {
 
         Network network = NetworkUtils.readNetwork(config.network().getInputFile());
 
-        // Initialize the main linkInfo map
-        Map<Id<Link>, LinkInfo> linkInfoMap = new HashMap<>();
-        for (Link link : network.getLinks().values()) {
-            linkInfoMap.put(link.getId(), new LinkInfo(link.getId()));
-        }
-        dataContainer.setLinkInfo(linkInfoMap);
-
-        // Initialize separate LinkInfo instances for each day
-        for (Day day : new Day[]{Day.thursday, Day.saturday, Day.sunday}) {
-            Map<Id<Link>, LinkInfo> dayMap = new HashMap<>();
-            for (Link link : network.getLinks().values()) {
-                dayMap.put(link.getId(), new LinkInfo(link.getId()));
-            }
-            dataContainer.setLinkInfoByDay(dayMap, day);
-        }
+        setLinkInfoMaps(dataContainer, network);
 
         new PtSkimsReaderMEL(dataContainer).read();
 
@@ -159,11 +147,53 @@ public class DataBuilderHealth {
         DoseResponseLookupReader doseResponseReader = new DoseResponseLookupReader();
         doseResponseReader.readData(properties.main.baseDirectory + properties.healthData.basePath);
         dataContainer.setDoseResponseData(doseResponseReader.getDoseResponseData());
-        dataContainer.setHealthPrevalenceData(new PrevalenceDataReader().readData(properties.main.baseDirectory + properties.healthData.prevalenceDataFile));
+        dataContainer.setHealthPrevalenceData(getHealthPrevalenceData(properties));
         dataContainer.setHealthInjuryRRdata(new InjuryRRTableReader().readData(properties.main.baseDirectory + properties.healthData.healthInjuryRRDataFile));
 
         MicroDataScaler microDataScaler = new MicroDataScaler(dataContainer, properties);
         microDataScaler.scale();
+    }
+
+    private static void setLinkInfoMaps(HealthDataContainerImpl dataContainer, Network network) {
+        // Initialize all maps first
+        Map<Id<Link>, LinkInfo> linkInfoMap = new HashMap<>();
+        Map<Day, Map<Id<Link>, LinkInfo>> dayMaps = new HashMap<>();
+
+        // Pre-create day-specific maps
+        Day[] days = {Day.thursday, Day.saturday, Day.sunday};
+        for (Day day : days) {
+            dayMaps.put(day, new HashMap<>());
+        }
+
+        // Single iteration through network links
+        for (Link link : network.getLinks().values()) {
+            Id<Link> linkId = link.getId();
+
+            // Create LinkInfo for main map
+            linkInfoMap.put(linkId, new LinkInfo(linkId));
+
+            // Create LinkInfo instances for each day
+            for (Day day : days) {
+                dayMaps.get(day).put(linkId, new LinkInfo(linkId));
+            }
+        }
+
+        // Set all maps in the data container
+        dataContainer.setLinkInfo(linkInfoMap);
+        for (Day day : days) {
+            dataContainer.setLinkInfoByDay(dayMaps.get(day), day);
+        }
+    }
+
+    private static Map<Integer, List<Diseases>> getHealthPrevalenceData(Properties properties) {
+        String prevalenceDataPath = properties.main.baseDirectory + properties.healthData.prevalenceDataFile;
+        if (!new File(prevalenceDataPath).exists()) {
+            logger.warn("No baseline disease prevalence data file found at {}. Simulation will be run with assumption of no baseline disease.", prevalenceDataPath);
+            return new HashMap<>();
+        } else{
+            logger.info("Reading health prevalence data from {}", prevalenceDataPath);
+            return new PrevalenceDataReader().readData(prevalenceDataPath);
+        }
     }
 
 

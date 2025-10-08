@@ -877,9 +877,8 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                 logger.error("No travel time/disutility for mode: " + mode);
         }
 
-        // ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
-        //ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
+        //
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
         AtomicInteger counter = new AtomicInteger();
         logger.info("Partition Size: " + partitionSize);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();

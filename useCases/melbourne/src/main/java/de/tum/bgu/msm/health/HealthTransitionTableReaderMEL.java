@@ -3,8 +3,8 @@ package de.tum.bgu.msm.health;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.health.data.DataContainerHealth;
 import de.tum.bgu.msm.health.disease.Diseases;
-import de.tum.bgu.msm.util.parseMEL;
 import de.tum.bgu.msm.utils.SiloUtil;
+import uk.cam.mrc.phm.util.parseMEL;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -13,7 +13,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
 
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
 
 public class HealthTransitionTableReaderMEL {
 
@@ -21,7 +21,7 @@ public class HealthTransitionTableReaderMEL {
     static java.util.Properties properties = getMelbourneProperties();
     private final String CATCHMENT_ID_COLUMN = properties.getProperty("zone.catchment.id.field");
     public EnumMap<Diseases, Map<String, Double>> readData(DataContainerHealth dataContainer, String path) {
-        logger.info("Reading health disease prob table from csv file");
+        logger.info("Reading health disease prob table from csv file: {}", path);
 
         EnumMap<Diseases, Map<String, Double>> healthDiseaseData = new EnumMap<>(Diseases.class);
         Set<String> diseasesNotInLookup = new HashSet<>();

@@ -20,7 +20,7 @@ import org.geotools.api.feature.simple.SimpleFeature;
 import org.locationtech.jts.geom.Coordinate;
 import org.matsim.core.utils.gis.ShapeFileReader;
 
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMelbourneProperties;
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
 
 
 public class GeoDataReaderMelbourne implements GeoDataReader {

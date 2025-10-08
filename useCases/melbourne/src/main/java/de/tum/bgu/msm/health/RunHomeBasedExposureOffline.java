@@ -12,7 +12,9 @@ import java.io.IOException;
 /**
  * Implements SILO for the Greater Melbourne
  *
- * @author Qin Zhang*/
+ * @author Qin Zhang
+ * @author Carl Higgs
+ **/
 
 
 public class RunHomeBasedExposureOffline {
@@ -20,22 +22,22 @@ public class RunHomeBasedExposureOffline {
     private final static Logger logger = LogManager.getLogger(RunHomeBasedExposureOffline.class);
 
     public static void main(String[] args) throws IOException {
-
+        logger.info("Started SILO home-based exposure offline model for Greater Melbourne");
+        logger.info("Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
 
         Config config = null;
         if (args.length > 1 && args[1] != null) {
             config = ConfigUtils.loadConfig(args[1]);
         }
-        logger.info("Started SILO land use model for the Greater Melbourne");
         int endYear = properties.main.endYear;
         HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
 
-        HealthExposureModelMEL exposureModelMCR = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
+        HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
 
 
-        exposureModelMCR.calculateHomeBasedExposureOnly(endYear);
+        exposureModelMEL.calculateHomeBasedExposureOnly(endYear);
         dataContainer.writePersonHomeBasedExposureData(endYear);
 
         logger.info("Finished SILO.");

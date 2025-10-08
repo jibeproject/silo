@@ -4,6 +4,7 @@ import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import de.tum.bgu.msm.data.Day;
 import de.tum.bgu.msm.health.injury.*;
 import de.tum.bgu.msm.properties.Properties;
+import uk.cam.mrc.phm.util.MelbourneImplementationConfig;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
@@ -87,8 +88,8 @@ public class AccidentRateModelOsmMEL {
         }
 
          */
-        // TODO: generalize for other networks
-        String networkFile = properties.main.baseDirectory + "input/mito/trafficAssignment/" + "network_" + properties.main.scenarioName + ".xml";
+        java.util.Properties props = MelbourneImplementationConfig.getMitoBaseProperties();
+        String networkFile = props.getProperty("MATSIM_NETWORK", "input/mito/trafficAssignment/network.xml");
         new MatsimNetworkReader(scenario.getNetwork()).readFile(networkFile);
         log.info("Reading network file... Done.");
 

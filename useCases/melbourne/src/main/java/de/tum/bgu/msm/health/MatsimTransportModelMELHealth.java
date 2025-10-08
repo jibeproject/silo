@@ -33,6 +33,8 @@ import de.tum.bgu.msm.matsim.SiloMatsimUtils;
 import de.tum.bgu.msm.models.transportModel.TransportModel;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.properties.modules.TransportModelPropertiesModule;
+import uk.cam.mrc.phm.util.CoefficientLookup;
+import uk.cam.mrc.phm.util.CoefficientLookup.CoefficientSet;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
@@ -75,9 +77,8 @@ import java.io.File;
 import java.util.*;
 import java.util.function.ToDoubleFunction;
 
-import static de.tum.bgu.msm.util.ExtractCoefficient.extractCoefficient;
-import static de.tum.bgu.msm.util.MelbourneImplementationConfig.getMitoBaseProperties;
-import static de.tum.bgu.msm.util.parseMEL.getHoursAsSeconds;
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
+import static uk.cam.mrc.phm.util.parseMEL.getHoursAsSeconds;
 import static org.matsim.core.config.groups.ScoringConfigGroup.ModeParams;
 
 /**
@@ -102,7 +103,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
     protected final Random random;
 
-    private static final java.util.Properties mitoProperties = getMitoBaseProperties();
+    private static final java.util.Properties melbourneProperties = getMelbourneProperties();
 
     public MatsimTransportModelMELHealth(DataContainer dataContainer, Config matsimConfig,
                                          Properties properties, MatsimScenarioAssembler scenarioAssembler,
@@ -114,6 +115,11 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         File file = new File(properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/matsim/initialConfig.xml");
         file.getParentFile().mkdirs();
         ConfigUtils.writeMinimalConfig(initialMatsimConfig, file.getAbsolutePath());
+
+        // Initialize coefficient lookup table once at startup
+        logger.info("Initialising coefficient lookup table for efficient processing...");
+        CoefficientLookup.initialise();
+        logger.info("Coefficient lookup initialised: {}", CoefficientLookup.getStatistics());
 
         final TravelTimes travelTimes = dataContainer.getTravelTimes();
         if (travelTimes instanceof MatsimTravelTimesAndCosts) {
@@ -133,8 +139,10 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         internalTravelTimes.initialize(dataContainer.getGeoData(), matsimData);
 
         if (properties.transportModel.matsimInitialEventsFile == null) {
-            //TODO: comment out for longitudinal simulation. need to make it more general
-            runTransportModel(properties.main.startYear);
+            if (properties.main.endYear==properties.main.startYear) {
+                // Only run here for cross-sectional analysis, not longitudinal
+                runTransportModel(properties.main.startYear);
+            }
         } else {
             String eventsFile = properties.main.baseDirectory + properties.transportModel.matsimInitialEventsFile;
             replayFromEvents(eventsFile);
@@ -170,13 +178,13 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
     }
 
     private void runMitoModel(int year) {
-        logger.warn("Running MITO model only for year " + year + ".");
+        logger.warn("Running MITO model only for year {}.", year);
         ((MitoMatsimScenarioAssemblerMEL)scenarioAssembler).runMitoStandalone(year);
     }
 
 
     private void runTransportModel(int year) {
-        logger.warn("Running MATSim transport model for year " + year + ".");
+        logger.warn("Running MATSim transport model for year {}.", year);
         Map<Day, Scenario> assembledMultiScenario;
         TravelTimes travelTimes = dataContainer.getTravelTimes();
         if (year == properties.main.baseYear &&
@@ -214,7 +222,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
                 }
             }
 
-            logger.warn("Running MATSim transport model for " + day + " Bike&Ped scenario " + year + ".");
+            logger.warn("Running MATSim transport model for Bike&Ped scenario {}: {} ", year, day);
             //initial bike, ped simulation config
             Config bikePedConfig = ConfigUtils.loadConfig(initialMatsimConfig.getContext());
             bikePedConfig.addModule(new BicycleConfigGroup());
@@ -224,7 +232,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             //initialize scenario
             MutableScenario matsimScenario = (MutableScenario) ScenarioUtils.loadScenario(bikePedConfig);
             matsimScenario.setPopulation(populationBikePed);
-            logger.info("total population " + day + " | Bike Walk: " + populationBikePed.getPersons().size());
+            logger.info("total population {} | Bike Walk: {}", day, populationBikePed.getPersons().size());
 
             // set vehicles
             EnumMap<Mode, EnumMap<MitoGender, Map<Integer,Double>>> allSpeeds = ((DataContainerHealth)dataContainer).getAvgSpeeds();
@@ -277,7 +285,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
 
             controlerBikePed.run();
-            logger.warn("Running MATSim transport model for " + day + " Bike&Ped scenario " + year + " finished.");
+            logger.warn("Completed MATSim transport model for Bike&Ped scenario {}: {}", year, day);
         }
     }
 
@@ -303,12 +311,12 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
                 throw new RuntimeException("Unrecognised day " + day);
             }
 
-            logger.info(day + " truck sample: " + truckSample);
+            logger.info("{} truck sample: {}", day, truckSample);
             if(truckSample < 1.) {
                 PopulationUtils.sampleDown(populationCarTruck, truckSample);
             }
 
-            logger.warn("MATSim truck population: " + day + "|" + year + "|" + populationCarTruck.getPersons().size());
+            logger.info("MATSim truck population: {}|{}|{}", day, year, populationCarTruck.getPersons().size());
 
             // Through traffic not estimated for Melbourne; omitted
             // See Manchester implementation for approach for re-adding this
@@ -324,7 +332,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             logger.warn("MATSim car/truck: " + day + "|" + year + "|" + populationCarTruck.getPersons().size());
 
 
-            logger.warn("Running MATSim transport model for " + day + " car scenario " + year + ".");
+            logger.warn("Running MATSim transport model for car scenario {}: {}", year, day);
             //initialize car truck config
             Config carTruckConfig = ConfigUtils.loadConfig(initialMatsimConfig.getContext());
             finalizeCarTruckConfig(carTruckConfig, year, day);
@@ -355,7 +363,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             //set up controler
             final Controler controlerCar = new Controler(matsimScenario);
             controlerCar.run();
-            logger.warn("Running MATSim transport model for " + day + " car scenario " + year + " finished.");
+            logger.warn("Completed MATSim transport model for car scenario {}: {}", year, day);
 
             // Get travel Times from MATSim - weekday
             if(day.equals(Day.thursday)){
@@ -515,35 +523,27 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
         MitoGender gender = (MitoGender) person.getAttributes().getAttribute("sex");
         int age = (int) person.getAttributes().getAttribute("age");
+        Purpose purpose = (Purpose) person.getAttributes().getAttribute("purpose");
+        CoefficientSet coeffs = CoefficientLookup.getCoefficients(purpose, mode);
 
-        for (String purposeString : mitoProperties.getProperty("trip.purposes").split(",")) {
-            Purpose purpose = Purpose.valueOf(purposeString.trim());
-            grad += extractCoefficient(purpose, mode, "grad");
-            stressLink += extractCoefficient(purpose, mode, "stressLink");
-            vgvi += extractCoefficient(purpose, mode, "vgvi");
-            speed += extractCoefficient(purpose, mode, "speed");
+        // Base coefficients
+        grad += coeffs.grad;
+        stressLink += coeffs.stressLink;
+        vgvi += coeffs.vgvi;
+        speed += coeffs.speed;
 
-            // Interaction terms
-            if (age >= 16 && gender.equals(MitoGender.FEMALE)) {
-                grad += extractCoefficient(purpose, mode, "grad_f");
-                stressLink += extractCoefficient(purpose, mode, "stressLink_f");
-                vgvi += extractCoefficient(purpose, mode, "vgvi_f");
-                speed += extractCoefficient(purpose, mode, "speed_f");
-            }
+        if (age >= 16 && gender.equals(MitoGender.FEMALE)) {
+            grad += coeffs.grad_f;
+            stressLink += coeffs.stressLink_f;
+            vgvi += coeffs.vgvi_f;
+            speed += coeffs.speed_f;
+        }
 
-            if (age < 16) {
-                grad += extractCoefficient(purpose, mode, "grad_c");
-                stressLink += extractCoefficient(purpose, mode, "stressLink_c");
-                vgvi += extractCoefficient(purpose, mode, "vgvi_c");
-                speed += extractCoefficient(purpose, mode, "speed_c");
-            }
-
-            // if (age >= 65) {
-            //     grad += extractCoefficient(purpose, mode, "grad_e");
-            //     stressLink += extractCoefficient(purpose, mode, "stressLink_e");
-            //     vgvi += extractCoefficient(purpose, mode, "vgvi_e");
-            //     speed += extractCoefficient(purpose, mode, "speed_e");
-            // }
+        if (age < 16) {
+            grad += coeffs.grad_c;
+            stressLink += coeffs.stressLink_c;
+            vgvi += coeffs.vgvi_c;
+            speed += coeffs.speed_c;
         }
 
         // Return aggregated coefficients

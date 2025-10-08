@@ -29,15 +29,14 @@ public class SiloMEL {
     private final static Logger logger = LogManager.getLogger(SiloMEL.class);
 
     public static void main(String[] args) throws IOException {
-
+        logger.info("Started SILO land use model for the Great Melbourne region");
+        logger.info("Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
-
         Config config = null;
         if (args.length > 1 && args[1] != null) {
             config = ConfigUtils.loadConfig(args[1]);
         }
         assert config != null;
-        logger.info("Started SILO land use model for the Great Melbourne region");
         HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
         ModelContainer modelContainer = ModelBuilderMEL.getModelContainerForMelbourne(dataContainer, properties, config);
