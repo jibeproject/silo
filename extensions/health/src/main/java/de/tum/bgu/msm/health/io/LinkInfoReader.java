@@ -71,54 +71,59 @@ public class LinkInfoReader {
             logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
         }
         logger.info("Finished reading " + recCount + " links with concentration.");
-
     }
 
-    public void readNoiseLevelData(DataContainerHealth dataContainer, String outputDirectory, Day day){
-        String path = outputDirectory + "/" + day +  "/car/noise-analysis/emissions/";
+    public void readNoiseLevelData(DataContainerHealth dataContainer, String outputDirectory, Day day) {
+        String path = outputDirectory + "/" + day + "/car/noise-analysis/emissions/";
+        logger.info("Reading noise level data from csv files");
 
-        logger.info("Reading noise level data from csv file");
+        int hourlyBins = 24;
+        int secondsPerHour = 3600;
+        int totalLinksRead = 0;
 
-        double startTime = 3600.;
-        double timeBinSize = 3600.;
-        double endTime = 24. * 3600.;
-
-
-        for ( double time = startTime ; time <= endTime ; time = time + timeBinSize ) {
-
-            logger.info("Reading time bin: " + time);
-
-            String fileName = path + "emission" + "_" + time + ".csv";
-            String recString = "";
-            int recCount = 0;
-            try {
-                BufferedReader in = new BufferedReader(new FileReader(fileName));
-                recString = in.readLine();
-
-                // read header
-                String[] header = recString.split(";");
-                int posLinkId = 0;
-                int posValue = header.length - 1;
-
-                // read line
-                while ((recString = in.readLine()) != null) {
-                    recCount++;
-                    String[] lineElements = recString.split(";");
-                    Id<Link> linkId = Id.createLinkId(lineElements[posLinkId]);
-                    float value = Float.parseFloat(lineElements[posValue]);
-
-                    if (dataContainer.getLinkInfo().get(linkId)==null){
-                        logger.warn("Link " + linkId + " does not exist in Link Info container.");
-                        continue;
-                    }
-
-                    dataContainer.getLinkInfo().get(linkId).getNoiseLevel2TimeBin().put((int) (time/3600 - 1), value);
-                }
-            } catch (IOException e) {
-                logger.fatal("IO Exception caught reading link noise emission file: " + path);
-                logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
-            }
-            logger.info("Finished reading " + recCount + " links with noise emission.");
+        for (int hourBin = 1; hourBin <= hourlyBins; hourBin++) {
+            double timeInSeconds = hourBin * secondsPerHour;
+            String fileName = path + "emission" + "_" + timeInSeconds + ".csv";
+            int linksReadInBin = readNoiseFileForTimeBin(dataContainer, fileName, hourBin);
+            totalLinksRead += linksReadInBin;
         }
+
+        logger.info("Completed reading noise data from " + hourlyBins + " files with a total of " +
+                    totalLinksRead + " links with noise emission.");
+    }
+
+    private int readNoiseFileForTimeBin(DataContainerHealth dataContainer, String fileName, int hourBin) {
+        String recString = "";
+        int recCount = 0;
+
+        try {
+            BufferedReader in = new BufferedReader(new FileReader(fileName));
+            recString = in.readLine();
+
+            // read header
+            String[] header = recString.split(";");
+            int posLinkId = 0;
+            int posValue = header.length - 1;
+
+            // read line
+            while ((recString = in.readLine()) != null) {
+                recCount++;
+                String[] lineElements = recString.split(";");
+                Id<Link> linkId = Id.createLinkId(lineElements[posLinkId]);
+                float noiseLevel = Float.parseFloat(lineElements[posValue]);
+
+                if (dataContainer.getLinkInfo().get(linkId) == null) {
+                    logger.warn("Link " + linkId + " does not exist in Link Info container.");
+                    continue;
+                }
+
+                dataContainer.getLinkInfo().get(linkId).getNoiseLevel2TimeBin().put(hourBin - 1, noiseLevel);
+            }
+        } catch (IOException e) {
+            logger.error("Failed to read noise data file: " + fileName, e);
+            return 0;
+        }
+
+        return recCount;
     }
 }
