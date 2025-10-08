@@ -55,16 +55,10 @@ public class SiloUtil {
 
     // Add static initializer to set up early logging capture
     static {
-        // Redirect early logging through our buffer
-        System.setProperty("log4j.configurationFile", "log4j2-console.xml");
-        LoggerContext.getContext(false).reconfigure();
-
-        // Capture command line for later logging
+        // Avoid reconfiguration which causes the error
+        // Don't attempt to set log4j properties here - just initialize the buffer
         captureCommandLine();
     }
-
-    // Store the command line
-    private static String commandLine = "";
 
     /**
      * Captures the Java command line that started the application
@@ -88,7 +82,7 @@ public class SiloUtil {
                 cmdBuilder.append(javaCommand);
             }
 
-            commandLine = cmdBuilder.toString();
+            String commandLine = cmdBuilder.toString();
             // Capture in early log buffer
             captureLog(Level.INFO, "Command line: " + commandLine);
         } catch (Exception e) {
@@ -116,8 +110,7 @@ public class SiloUtil {
         public synchronized void capture(Level level, String message) {
             if (!initialized) {
                 buffer.add(new LogMessage(level, message));
-                // Also print to console to ensure visibility during initialization
-                System.out.println("[EARLY LOG] " + level + ": " + message);
+                // Don't print to console - these messages will be properly logged when flushed to the logger
             }
         }
 
@@ -264,15 +257,18 @@ public class SiloUtil {
             config.getRootLogger().addAppender(warnErrorAppender, org.apache.logging.log4j.Level.WARN, null);
         }
 
+        // Update loggers without full reconfiguration to avoid the error
         ctx.updateLoggers();
 
-        // Force a reconfiguration to ensure loggers are fully initialized
-        ctx.reconfigure();
+        // Small pause to allow logger changes to take effect
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
 
         // Flush any early messages that were captured to the log file
         earlyMessageBuffer.flushToLogger(logger);
-
-        logger.info("Initialising logging: " + outputDirectory + FileSystems.getDefault().getSeparator() + LOG_FILE_NAME + ".log");
     }
 
     public static void loadHdf5Lib() {
