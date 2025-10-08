@@ -53,8 +53,6 @@ import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
 import routing.travelDisutility.ActiveDisutilityPrecalc;
-import routing.travelTime.BicycleLinkSpeedCalculatorImpl;
-import routing.travelTime.BicycleTravelTime;
 import routing.travelTime.WalkLinkSpeedCalculatorImpl;
 import routing.travelTime.WalkTravelTime;
 
