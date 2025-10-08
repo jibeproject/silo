@@ -62,8 +62,7 @@ public class ActivityLocationInfoReader {
                 }
             }
         } catch (IOException e) {
-            logger.fatal("IO Exception caught reading location concentration file: " + path);
-            logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
+            logger.warn("IO Exception caught reading location concentration file: " + path);
         }
         logger.info("Finished reading " + recCount + " locations with concentration.");
     }

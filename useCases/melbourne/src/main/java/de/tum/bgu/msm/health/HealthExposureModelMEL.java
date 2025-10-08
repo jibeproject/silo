@@ -319,11 +319,22 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             // Print results for the current mode
+            System.out.println(); // Empty line for readability
             logger.info("Analysis for day: " + day + ", mode: " + mode);
-            logger.info("  - {} Links with Zero Flow: Total Risk: %.4f, Average Risk: %.4f%n",
-                    zeroFlowCount, zeroFlowRisk,  zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0);
-            logger.info("Links with Non-Zero Flow: Total Risk: %.4f, Average Risk: %.4f%n",
-                    nonZeroFlowCount, nonZeroFlowRisk,  nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0);
+
+            // Format risk values to 4 significant digits
+            String formattedZeroFlowRisk = String.format("%.4g", zeroFlowRisk);
+            String formattedZeroFlowAvgRisk = String.format("%.4g",
+                    zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0);
+
+            String formattedNonZeroFlowRisk = String.format("%.4g", nonZeroFlowRisk);
+            String formattedNonZeroFlowAvgRisk = String.format("%.4g",
+                    nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0);
+
+            logger.info("  - {} Links with Zero Flow: Total Risk: {}, Average Risk: {}",
+                    zeroFlowCount, formattedZeroFlowRisk, formattedZeroFlowAvgRisk);
+            logger.info(" - {} links with Non-Zero Flow: Total Risk: {}, Average Risk: {}",
+                    nonZeroFlowCount, formattedNonZeroFlowRisk, formattedNonZeroFlowAvgRisk);
             System.out.println(); // Empty line for readability
         }
     }
