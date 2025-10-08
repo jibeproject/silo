@@ -160,38 +160,17 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         case bicycle:
                         case walk:
                         case pt:
-                            /*
-                            if(Day.thursday.equals(day)){ // trips during weekdays
-                                mitoTrips = mitoTripsAll.values().stream().
-                                        filter(trip -> trip.getTripMode().equals(mode) & weekdays.contains(trip.getDepartureDay())).
-                                        collect(Collectors.toMap(Trip::getId,trip -> trip));
-                            }else { // trips during weekends
-                                mitoTrips = mitoTripsAll.values().stream().
-                                        filter(trip -> trip.getTripMode().equals(mode) & trip.getDepartureDay().equals(day)).
-                                        collect(Collectors.toMap(Trip::getId,trip -> trip));
-                            }
-
-                             */
                             // Filter trips for the specific day only
 
+
                             mitoTrips = mitoTripsAll.values().stream()
                                     .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
                                     .collect(Collectors.toMap(Trip::getId, trip -> trip));
 
-
-
-
-                            /*
-                            mitoTrips = mitoTripsAll.values().stream()
-                                    .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
-                                    .limit(10000) // Test with 10K trips
-                                    .collect(Collectors.toMap(Trip::getId, trip -> trip));
-
-                             */
-
+                            logger.info("{} {} trips: {}", day, mode, mitoTrips.size());
 
                             healthDataAssembler(latestMatsimYear, dayForHealthData, mode);
-                            final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName +"/" + year+"/" ;
+                            final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/" + year + "/";
                             String filett = outputDirectory
                                     + "healthIndicators"
                                     + "_" + day
@@ -200,7 +179,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             new TripExposureWriter().writeMitoTrips(mitoTrips, filett);
                             break;
                         default:
-                            logger.warn("No exposure model for mode: " + mode);
+                            logger.warn("No exposure model for mode: {}", mode);
                     }
                     mitoTrips.clear();
                     mitoTrips = null; // Optional: nullify if not reused immediately
@@ -614,7 +593,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
-
+        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
         final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
@@ -802,8 +781,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
     private void calculateTripHealthIndicator(List<Trip> trips, Day day, Mode mode) {
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int processorsToUse = Math.min(availableProcessors, 14);
+        logger.info("Using {}/{} available processors.", availableProcessors,processorsToUse);
 
-        final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
@@ -853,7 +835,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         scenario.getVehicles().addVehicleType(bicycle);
                     }
                 }
-                travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
+                // Create the precomp factor provider once
+                BicycleLinkSpeedCalculatorPrecomp factorProvider = new BicycleLinkSpeedCalculatorPrecomp(scenario.getConfig());
+
+                // Create the travel time calculator using precomputation
+                travelTime = new BicycleTravelTimePreComp(scenario.getNetwork(), factorProvider);
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),bicycleConfigGroup,travelTime);
                 break;
             default:
