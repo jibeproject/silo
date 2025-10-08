@@ -75,55 +75,28 @@ public class LinkInfoReader {
 
     public void readNoiseLevelData(DataContainerHealth dataContainer, String outputDirectory, Day day) {
         String path = outputDirectory + "/" + day + "/car/noise-analysis/emissions/";
-        logger.info("Reading noise level data from csv files");
+        logger.info("Reading noise level emissions data from csv files: {}", path);
 
-        int hourlyBins = 24;
-        int secondsPerHour = 3600;
-        int totalLinksRead = 0;
+        NoiseDataReader.FileProcessor fileProcessor = new NoiseDataReader.FileProcessor() {
+            @Override
+            public int processFile(String filePath, int hourBinZeroBased) {
+                return processNoiseFile(dataContainer, filePath, hourBinZeroBased);
+            }
+        };
 
-        for (int hourBin = 1; hourBin <= hourlyBins; hourBin++) {
-            double timeInSeconds = hourBin * secondsPerHour;
-            String fileName = path + "emission" + "_" + timeInSeconds + ".csv";
-            int linksReadInBin = readNoiseFileForTimeBin(dataContainer, fileName, hourBin);
-            totalLinksRead += linksReadInBin;
-        }
-
-        logger.info("Completed reading noise data from " + hourlyBins + " files with a total of " +
-                    totalLinksRead + " links with noise emission.");
+        NoiseDataReader.readNoiseFilesForDay(path, "emission", fileProcessor);
     }
 
-    private int readNoiseFileForTimeBin(DataContainerHealth dataContainer, String fileName, int hourBin) {
-        String recString = "";
-        int recCount = 0;
+    private int processNoiseFile(DataContainerHealth dataContainer, String filePath, int hourBinZeroBased) {
+        return NoiseDataReader.readNoiseFile(filePath, 0, 1, (linkIdStr, noiseLevel) -> {
+            Id<Link> linkId = Id.createLinkId(linkIdStr);
 
-        try {
-            BufferedReader in = new BufferedReader(new FileReader(fileName));
-            recString = in.readLine();
-
-            // read header
-            String[] header = recString.split(";");
-            int posLinkId = 0;
-            int posValue = header.length - 1;
-
-            // read line
-            while ((recString = in.readLine()) != null) {
-                recCount++;
-                String[] lineElements = recString.split(";");
-                Id<Link> linkId = Id.createLinkId(lineElements[posLinkId]);
-                float noiseLevel = Float.parseFloat(lineElements[posValue]);
-
-                if (dataContainer.getLinkInfo().get(linkId) == null) {
-                    logger.warn("Link " + linkId + " does not exist in Link Info container.");
-                    continue;
-                }
-
-                dataContainer.getLinkInfo().get(linkId).getNoiseLevel2TimeBin().put(hourBin - 1, noiseLevel);
+            if (dataContainer.getLinkInfo().get(linkId) == null) {
+                logger.warn("Link " + linkId + " does not exist in Link Info container.");
+                return;
             }
-        } catch (IOException e) {
-            logger.error("Failed to read noise data file: " + fileName, e);
-            return 0;
-        }
 
-        return recCount;
+            dataContainer.getLinkInfo().get(linkId).getNoiseLevel2TimeBin().put(hourBinZeroBased, noiseLevel);
+        });
     }
 }

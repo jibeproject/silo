@@ -69,57 +69,28 @@ public class ActivityLocationInfoReader {
     }
 
     public void readNoiseLevelData(DataContainerHealth dataContainer, String path) {
-        logger.info("Reading noise level data from csv files");
+        logger.info("Reading noise level imissions data from csv files: {}", path);
 
-        int hourlyBins = 24;
-        int secondsPerHour = 3600;
-        int totalPointsRead = 0;
+        NoiseDataReader.FileProcessor fileProcessor = new NoiseDataReader.FileProcessor() {
+            @Override
+            public int processFile(String filePath, int hourBinZeroBased) {
+                return processNoiseFile(dataContainer, filePath, hourBinZeroBased);
+            }
+        };
 
-        for (int hourBin = 1; hourBin <= hourlyBins; hourBin++) {
-            double timeInSeconds = hourBin * secondsPerHour;
-            String fileName = path + "immission" + "_" + timeInSeconds + ".csv";
-            int pointsReadInBin = readNoiseFileForTimeBin(dataContainer, fileName, hourBin);
-            totalPointsRead += pointsReadInBin;
-        }
-
-        logger.info("Completed reading noise data from " + hourlyBins + " files with a total of " +
-                    totalPointsRead + " receiver points.");
+        NoiseDataReader.readNoiseFilesForDay(path, "immission", fileProcessor);
     }
 
-    private int readNoiseFileForTimeBin(DataContainerHealth dataContainer, String fileName, int hourBin) {
-        String recString = "";
-        int recCount = 0;
-
-        try {
-            BufferedReader in = new BufferedReader(new FileReader(fileName));
-            recString = in.readLine();
-
-            // read header
-            String[] header = recString.split(";");
-            int posRpId = 0;
-            int posValue = 1;
-
-            // read line
-            while ((recString = in.readLine()) != null) {
-                recCount++;
-                String[] lineElements = recString.split(";");
-                String receiverPointId = lineElements[posRpId];
-                float noiseLevel = Float.parseFloat(lineElements[posValue]);
-
-                if (dataContainer.getActivityLocations().get(receiverPointId) == null) {
-                    logger.error("Receiver point " + receiverPointId + " does not exist in receiver point container.");
-                    continue;
-                }
-
-                // Store non-negative noise level values
-                dataContainer.getActivityLocations().get(receiverPointId).getNoiseLevel2TimeBin()
-                        .put(hourBin - 1, Math.max(0, noiseLevel));
+    private int processNoiseFile(DataContainerHealth dataContainer, String filePath, int hourBinZeroBased) {
+        return NoiseDataReader.readNoiseFile(filePath, 0, 1, (receiverPointId, noiseLevel) -> {
+            if (dataContainer.getActivityLocations().get(receiverPointId) == null) {
+                logger.error("Receiver point " + receiverPointId + " does not exist in receiver point container.");
+                return;
             }
-        } catch (IOException e) {
-            logger.error("Failed to read noise data file: " + fileName, e);
-            return 0;
-        }
 
-        return recCount;
+            // Store non-negative noise level values
+            dataContainer.getActivityLocations().get(receiverPointId).getNoiseLevel2TimeBin()
+                    .put(hourBinZeroBased, Math.max(0, noiseLevel));
+        });
     }
 }
