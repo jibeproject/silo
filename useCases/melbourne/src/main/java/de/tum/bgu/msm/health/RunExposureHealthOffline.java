@@ -16,7 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 /**
- * Implements SILO for the Greater Melbourne
+ * Implements SILO for Greater Melbourne
  *
  * @author Qin Zhang
  * @author Carl Higgs

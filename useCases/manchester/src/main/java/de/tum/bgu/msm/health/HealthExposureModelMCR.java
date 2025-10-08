@@ -148,12 +148,12 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                 logger.warn("Run health exposure model for " + day);
 
                 for(Mode mode : Mode.values()){
-                    switch (mode){
-                        case autoDriver:
-                        case autoPassenger:
-                        case bicycle:
-                        case walk:
-                        case pt:
+                        switch (mode) {
+                            case autoDriver:
+                            case autoPassenger:
+                            case bicycle:
+                            case walk:
+                            case pt:
                             /*
                             if(Day.thursday.equals(day)){ // trips during weekdays
                                 mitoTrips = mitoTripsAll.values().stream().
@@ -166,11 +166,13 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                             }
 
                              */
-                            // Filter trips for the specific day only
+                                // Filter trips for the specific day only
 
-                            mitoTrips = mitoTripsAll.values().stream()
-                                    .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
-                                    .collect(Collectors.toMap(Trip::getId, trip -> trip));
+                                mitoTrips = mitoTripsAll.values().stream()
+                                        .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
+                                        .collect(Collectors.toMap(Trip::getId, trip -> trip));
+
+                            System.out.println("Number of trips for day " + day + " and mode " + mode + ": " + mitoTrips.size());
 
 
 
@@ -184,21 +186,22 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                              */
 
 
-                            healthDataAssembler(latestMatsimYear, dayForHealthData, mode);
-                            final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName +"/" + year+"/" ;
-                            String filett = outputDirectory
-                                    + "healthIndicators"
-                                    + "_" + day
-                                    + "_" + mode
-                                    + ".csv";
-                            new TripExposureWriter().writeMitoTrips(mitoTrips, filett);
-                            break;
-                        default:
-                            logger.warn("No exposure model for mode: " + mode);
-                    }
-                    mitoTrips.clear();
-                    mitoTrips = null; // Optional: nullify if not reused immediately
-                    mitoTrips = new HashMap<>(); // Reinitialize for next mode
+                                healthDataAssembler(latestMatsimYear, dayForHealthData, mode);
+                                final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/" + year + "/";
+                                String filett = outputDirectory
+                                        + "healthIndicators"
+                                        + "_" + day
+                                        + "_" + mode
+                                        + ".csv";
+                                new TripExposureWriter().writeMitoTrips(mitoTrips, filett);
+                                break;
+                            default:
+                                logger.warn("No exposure model for mode: " + mode);
+                        }
+                        mitoTrips.clear();
+                        mitoTrips = null; // Optional: nullify if not reused immediately
+                        mitoTrips = new HashMap<>(); // Reinitialize for next mode
+
                 }
 
                 // Track completed simulated days
@@ -621,9 +624,13 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
 
+        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
+
         final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        //final int partitionSize = (int) ((double) trips.size() / 28) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
+        // ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 28));
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
 
         AtomicInteger counter = new AtomicInteger();
@@ -798,8 +805,10 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
 
     private void calculateTripHealthIndicator(List<Trip> trips, Day day, Mode mode) {
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
+        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
 
-        final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        //final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        final int partitionSize = (int) ((double) trips.size() / Math.min(Runtime.getRuntime().availableProcessors(), 14)) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
@@ -849,7 +858,12 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                         scenario.getVehicles().addVehicleType(bicycle);
                     }
                 }
-                travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
+                // Create the precomp factor provider once
+                BicycleLinkSpeedCalculatorPrecomp factorProvider = new BicycleLinkSpeedCalculatorPrecomp(scenario.getConfig());
+
+                // Create the travel time calculator using precomputation
+                travelTime = new BicycleTravelTimePreComp(scenario.getNetwork(), factorProvider);
+                //travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),bicycleConfigGroup,travelTime);
                 break;
             default:
@@ -858,11 +872,13 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                 logger.error("No travel time/disutility for mode: " + mode);
         }
 
-        //
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
+        // ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
+        //ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
         AtomicInteger counter = new AtomicInteger();
         logger.info("Partition Size: " + partitionSize);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
+
 
         for (final List<Trip> partition : partitions) {
 
@@ -918,7 +934,7 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                                     "origin node: " + originNode + ", dest node: " + destinationNode);
                             NO_PATH_TRIP.getAndIncrement();
                         } else {
-                            calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
+                                calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
                         }
 
                         // Calculate exposures for activity & return trip (home-based trips only)

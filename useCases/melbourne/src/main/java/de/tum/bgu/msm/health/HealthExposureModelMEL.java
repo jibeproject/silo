@@ -79,17 +79,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     // private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new HashMap<>();
     private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
 
-    // File manager for optimization - skips existing output files and loads data into memory
     private final HealthOutputFileManager fileManager;
 
-    // Cache for link info and activity location data to avoid repeated loading
     private final Map<Day, Boolean> linkInfoLoadedCache = new ConcurrentHashMap<>();
     private final Map<Day, Boolean> activityLocationInfoLoadedCache = new ConcurrentHashMap<>();
-
-    // Cache for processed health indicators to avoid recomputation
     private final Map<String, Map<Integer, Trip>> processedHealthIndicatorCache = new ConcurrentHashMap<>();
-
-    // Pre-computed risk cache to optimize getRiskValue2 performance bottleneck
     private final Map<String, Map<Id<Link>, Map<Integer, Double>>> preComputedRisksByModeLinkHour = new ConcurrentHashMap<>();
 
     public HealthExposureModelMEL(DataContainer dataContainer, Properties properties, Random random, Config config) {
@@ -189,8 +183,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                     .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
                                     .collect(Collectors.toMap(Trip::getId, trip -> trip));
 
+                            logger.info("{} {} trips: {}", day, mode, mitoTrips.size());
+
                             healthDataAssembler(latestMatsimYear, dayForHealthData, mode);
-                            final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName +"/" + year+"/" ;
+                            final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/" + year + "/";
                             String filett = outputDirectory
                                     + "healthIndicators"
                                     + "_" + day
@@ -199,7 +195,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             new TripExposureWriter().writeMitoTrips(mitoTrips, filett);
                             break;
                         default:
-                            logger.warn("No exposure model for mode: " + mode);
+                            logger.warn("No exposure model for mode: {}", mode);
                     }
                     mitoTrips.clear();
                     mitoTrips = new HashMap<>();
@@ -208,7 +204,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 // Track completed simulated days
                 completedDays.add(day);
 
-                // Load existing traffic flow data BEFORE risk analysis
+                // Load existing traffic flow data
                 loadExistingTrafficFlowData(year, day, networkFull);
 
                 //
@@ -275,20 +271,36 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                                    Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour) {
         // Define modes to loop over
         List<String> modes = Arrays.asList("car", "bike", "walk");
-
+        Day dayForHealthData = weekdays.contains(day)
+                ? Day.thursday
+                : day;
         // Loop over each mode
         for (String mode : modes) {
+            // Loop over each mode
             double zeroFlowRisk = 0.0;
             double nonZeroFlowRisk = 0.0;
             int zeroFlowCount = 0;
             int nonZeroFlowCount = 0;
-            int zeroFlowNonZeroRiskCount = 0;
-            int nonZeroFlowNonZeroRiskCount = 0;
 
             for (int hour = 0; hour < 24; hour++) {
+                // Initialize accumulators for risks
+
                 // Loop over all links in the MATSim network
                 for (Link link : network.getLinks().values()) {
-                    double linkRisk = getPreComputedRiskValue(mode, link.getId(), hour);
+                    // Use pre-computed Risk
+//                    double linkRisk = getPreComputedRiskValue(mode, link.getId(), hour);
+//                    // OR Get link info for the specific day and link
+                    LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
+                            .getLinkInfoByDay(dayForHealthData)
+                            .get(link.getId());
+
+                    // Skip if linkInfo is null
+                    if (linkInfo == null) {
+                        continue;
+                    }
+
+                    // Get risk for the mode, hour, and link
+                    double linkRisk = getLinkInjuryRisk2(mode, hour, linkInfo);
 
                     // Get flow for the day, mode, link, and hour
                     int flow = trafficFlowsByDayModeLinkHour
@@ -301,27 +313,19 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     if (flow == 0) {
                         zeroFlowRisk += linkRisk;
                         zeroFlowCount++;
-                        if (linkRisk > 0) {
-                            zeroFlowNonZeroRiskCount++;
-                        }
                     } else {
                         nonZeroFlowRisk += linkRisk;
                         nonZeroFlowCount++;
-                        if (linkRisk > 0) {
-                            nonZeroFlowNonZeroRiskCount++;
-                        }
                     }
                 }
             }
 
             // Print results for the current mode
-            System.out.println("Analysis for day: " + day + ", mode: " + mode);
-            System.out.println("Links with Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Non-Zero Risk Count: %d%n",
-                    zeroFlowRisk, zeroFlowCount, zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0, zeroFlowNonZeroRiskCount);
-            System.out.println("Links with Non-Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f, Non-Zero Risk Count: %d%n",
-                    nonZeroFlowRisk, nonZeroFlowCount, nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0, nonZeroFlowNonZeroRiskCount);
+            logger.info("Analysis for day: " + day + ", mode: " + mode);
+            logger.info("  - {} Links with Zero Flow: Total Risk: %.4f, Average Risk: %.4f%n",
+                    zeroFlowCount, zeroFlowRisk,  zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0);
+            logger.info("Links with Non-Zero Flow: Total Risk: %.4f, Average Risk: %.4f%n",
+                    nonZeroFlowCount, nonZeroFlowRisk,  nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0);
             System.out.println(); // Empty line for readability
         }
     }
@@ -644,8 +648,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
-        logger.info("Updating trip health data for mode " + mode + ", day " + day);
-
+        logger.info("Updating trip health data for mode {}, day {}", mode, day);
+        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
         final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
@@ -833,8 +837,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
     private void calculateTripHealthIndicator(List<Trip> trips, Day day, Mode mode) {
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int processorsToUse = Math.min(availableProcessors, 14);
+        logger.info("Using {}/{} available processors.", availableProcessors,processorsToUse);
 
-        final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
@@ -884,7 +891,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         scenario.getVehicles().addVehicleType(bicycle);
                     }
                 }
-                travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
+                // Create the precomp factor provider once
+                BicycleLinkSpeedCalculatorPrecomp factorProvider = new BicycleLinkSpeedCalculatorPrecomp(scenario.getConfig());
+
+                // Create the travel time calculator using precomputation
+                travelTime = new BicycleTravelTimePreComp(scenario.getNetwork(), factorProvider);
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),bicycleConfigGroup,travelTime);
                 break;
             default:
@@ -1114,7 +1125,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 for(double currentDayHour = startDayHour; currentDayHour < endDayHour;) {
                     //check if start hour is already next day, it could be that trip starts at 23:30, after travelling (e.g. 40 mins), activity start time is next day
-                    //the limitation is already we move it to next day, the AP and noise data is still retrieved from the current day. because to save memory, we handle trips day by day and only retrive AP noise data of the corresponding day
+                    //the limitation is already we move it to next day, the AP and noise data is still retrieved from the current day. because to save memory, we handle trips day by day and only retrieve AP noise data of the corresponding day
                     //so it might slightly overestimate the personal exposure, if we use weekday for (next day) saturday
                     if(currentDayHour >= 24){
                         currentDayCode++;
@@ -1237,8 +1248,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         // Determine mode string
         String modeStr;
         switch (mode) {
-            case autoPassenger:
             case autoDriver:
+            case autoPassenger:
                 modeStr = "Driver";
                 break;
             case bicycle:
@@ -1375,20 +1386,20 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 double locationIncrementalPM25 = getPollutionExposureValue(activityLocation, exactDayHour, "PM25");
                 double locationIncrementalNO2 = getPollutionExposureValue(activityLocation, exactDayHour, "NO2");
-
+                // Air pollution
                 double exposurePM25 = PollutionExposure.getActivityExposurePm25_newvent(durationInThisHour * 60, sportweekmMETh, locationIncrementalPM25);
                 double exposureNo2 = PollutionExposure.getActivityExposureNo2_newvent(durationInThisHour * 60, sportweekmMETh, locationIncrementalNO2);
                 activityExposurePM25 += exposurePM25;
                 activityExposureNo2 += exposureNo2;
 
-                // Noise level - back to original approach
+                // Noise level
                 if(!activityLocation.getNoiseLevel2TimeBin().isEmpty()){
                     double noiseExposure = activityLocation.getNoiseLevel2TimeBin().get(exactDayHour) * durationInThisHour;
                     activityNoiseExposureByHour[exactWeekHour] = (float) noiseExposure;
                     activityNoiseExposure += noiseExposure;
                 }
 
-                // Green ndvi - back to original approach
+                //Green ndvi
                 activityGreenExposure += activityLocation.getNdvi() * durationInThisHour;
             }else{
                 logger.warn("No receiver point info found for rpId: " + rpId + " tripId: " + trip.getTripId());
@@ -1442,7 +1453,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
 
                 if(activityLocation != null) {
-                    // Use helper method to get pollution exposure values safely
+                    // Air pollution
                     double locationIncrementalPM25 = getPollutionExposureValue(activityLocation, dayHour, "PM25");
                     double locationIncrementalNO2 = getPollutionExposureValue(activityLocation, dayHour, "NO2");
 
@@ -1961,4 +1972,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
         }
     }
+
+
 }
+

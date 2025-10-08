@@ -17,6 +17,7 @@ import de.tum.bgu.msm.health.data.LinkInfo;
 import de.tum.bgu.msm.health.data.ActivityLocation;
 import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.disease.HealthExposures;
+import de.tum.bgu.msm.health.io.CarDriverShareTableReader;
 import de.tum.bgu.msm.health.io.InjuryRRTableReader;
 import de.tum.bgu.msm.io.NoiseDwellingWriter;
 import de.tum.bgu.msm.properties.Properties;
@@ -47,6 +48,7 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
     private Map<Integer, Map<Integer, List<String>>> healthDiseaseTrackerRemovedPerson = new HashMap<>();
     private Map<Integer, List<Diseases>> healthPrevalenceData;
     private Map<String, EnumMap<Gender, Map<String, InjuryRRTableReader.DataEntry>>> healthInjuryRRdata;
+    private Map<String, EnumMap<Gender, CarDriverShareTableReader.DataEntry>> carShareInjuryData;
 
     public HealthDataContainerImpl(DataContainerWithSchools delegate,
                                    Properties properties) {
@@ -233,6 +235,14 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
 
     public Map<String, EnumMap<Gender, Map<String, InjuryRRTableReader.DataEntry>>> getHealthInjuryRRdata(){
         return healthInjuryRRdata;
+    }
+
+    public void setCarShareInjurydata(Map<String, EnumMap<Gender, CarDriverShareTableReader.DataEntry>> carShareInjuryData){
+        this.carShareInjuryData = carShareInjuryData;
+    }
+
+    public Map<String, EnumMap<Gender, CarDriverShareTableReader.DataEntry>> getCarShareInjurydata(){
+        return carShareInjuryData;
     }
 
     public void setHealthPrevalenceData(Map<Integer, List<Diseases>> healthPrevalenceData){
