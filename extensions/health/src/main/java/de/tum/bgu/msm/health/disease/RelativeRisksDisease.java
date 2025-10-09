@@ -34,8 +34,8 @@ public class RelativeRisksDisease {
         return relativeRisksByDisease;
     }
 
-    public static EnumMap<Diseases, Float> calculateForPM25(PersonHealth personMRC, DataContainerHealth dataContainer) {
-        double total_pm25 = personMRC.getWeeklyExposureByPollutantNormalised("pm2.5");
+    public static EnumMap<Diseases, Float> calculateForPM25(PersonHealth personHealth, DataContainerHealth dataContainer) {
+        double total_pm25 = personHealth.getWeeklyExposureByPollutantNormalised("pm2.5");
         EnumMap<Diseases, Float> relativeRisksByDisease = new EnumMap<>(Diseases.class);
 
         for(Diseases diseases : dataContainer.getDoseResponseData().get(HealthExposures.AIR_POLLUTION_PM25).keySet()){
@@ -47,8 +47,8 @@ public class RelativeRisksDisease {
         return relativeRisksByDisease;
     }
 
-    public static EnumMap<Diseases, Float> calculateForNO2(PersonHealth personMRC, DataContainerHealth dataContainer) {
-        double total_pm25 = personMRC.getWeeklyExposureByPollutantNormalised("no2");
+    public static EnumMap<Diseases, Float> calculateForNO2(PersonHealth personHealth, DataContainerHealth dataContainer) {
+        double total_pm25 = personHealth.getWeeklyExposureByPollutantNormalised("no2");
         EnumMap<Diseases, Float> relativeRisksByDisease = new EnumMap<>(Diseases.class);
 
         for(Diseases diseases : dataContainer.getDoseResponseData().get(HealthExposures.AIR_POLLUTION_NO2).keySet()){
@@ -60,8 +60,8 @@ public class RelativeRisksDisease {
         return relativeRisksByDisease;
     }
 
-    public static EnumMap<Diseases, Float> calculateForNoise(PersonHealth personMRC, DataContainerHealth dataContainer) {
-        double total_noiseLevel = personMRC.getWeeklyNoiseExposuresNormalised();
+    public static EnumMap<Diseases, Float> calculateForNoise(PersonHealth personHealth, DataContainerHealth dataContainer) {
+        double total_noiseLevel = personHealth.getWeeklyNoiseExposuresNormalised();
         EnumMap<Diseases, Float> relativeRisksByDisease = new EnumMap<>(Diseases.class);
 
         for(Diseases diseases : dataContainer.getDoseResponseData().get(HealthExposures.NOISE).keySet()){
@@ -73,8 +73,8 @@ public class RelativeRisksDisease {
         return relativeRisksByDisease;
     }
 
-    public static EnumMap<Diseases, Float> calculateForNDVI(PersonHealth personMRC, DataContainerHealth dataContainer) {
-        double total_ndvi = personMRC.getWeeklyGreenExposuresNormalised();
+    public static EnumMap<Diseases, Float> calculateForNDVI(PersonHealth personHealth, DataContainerHealth dataContainer) {
+        double total_ndvi = personHealth.getWeeklyGreenExposuresNormalised();
         EnumMap<Diseases, Float> relativeRisksByDisease = new EnumMap<>(Diseases.class);
 
         for(Diseases diseases : dataContainer.getDoseResponseData().get(HealthExposures.NDVI).keySet()){
