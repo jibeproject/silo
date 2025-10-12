@@ -650,38 +650,24 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
-        logger.info("Updating trip health data for mode {}, day {}", mode, day);
-        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
-        final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        logger.info("Updating trip health data for mode " + mode + ", day " + day);
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int processorsToUse = Math.min(availableProcessors, 14);
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
-
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
-
+        logger.info("  - {} partitions across {}/{} available processors.", availableProcessors,processorsToUse);
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
         // Progress tracking variables
         final int totalTrips = trips.size();
         final AtomicInteger processedTrips = new AtomicInteger(0);
-        final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
-
-        logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
-
-        AtomicInteger counter = new AtomicInteger();
-        logger.info("Partition Size: " + partitionSize);
-
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
-
+        final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
+        logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
         for (final List<Trip> partition : partitions) {
+
             executor.addTaskToQueue(() -> {
                 try {
-                    int id = counter.incrementAndGet();
-
                     for (Trip trip : partition) {
-                        // Update progress counter and log at intervals
-                        int current = processedTrips.incrementAndGet();
-                        if (current % logInterval == 0 || current == totalTrips) {
-                            double percentage = 100.0 * current / totalTrips;
-                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
-                                    day, mode, current, totalTrips, percentage));
-                        }
 
                         Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
                         MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
@@ -749,9 +735,15 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
 
                             processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, returnDepartureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
-                        }
 
-                        counter.incrementAndGet();
+                        }
+                        // Update progress counter and log at intervals
+                        int current = processedTrips.incrementAndGet();
+                        if (current % logInterval == 0 || current == totalTrips) {
+                            double percentage = 100.0 * current / totalTrips;
+                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
+                                    day, mode, current, totalTrips, percentage));
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -763,8 +755,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
         executor.execute();
 
-        logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
-                day, mode, totalTrips, NO_PATH_TRIP.get(), 100.0 * NO_PATH_TRIP.get() / totalTrips));
+        logger.info("No path trips for mode " + mode + " : " + NO_PATH_TRIP.get());
     }
 
     private void processPtLegExposures(Trip trip, Mode legMode, double legDist_m, double legTime_s, double startTimeInSecond) {
@@ -811,8 +802,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             double legPartExposurePm25 = PollutionExposure.getLinkExposurePm25(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_PM25, legTime_s, legMarginalMet);
             double legPartExposureNo2 = PollutionExposure.getLinkExposureNo2(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_NO2,legTime_s, legMarginalMet);
 
-            legExposurePm25ByHour[exactWeekHour] += (float) legPartExposurePm25;
-            legExposureNo2ByHour[exactWeekHour] += (float) legPartExposureNo2;
+            legExposurePm25ByHour[exactWeekHour] += legPartExposurePm25;
+            legExposureNo2ByHour[exactWeekHour] += legPartExposureNo2;
 
             legExposurePm25 += legPartExposurePm25;
             legExposureNo2 += legPartExposureNo2;
@@ -841,9 +832,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int processorsToUse = Math.min(availableProcessors, 14);
-        logger.info("Using {}/{} available processors.", processorsToUse, availableProcessors);
-
-        final int partitionSize = (int) ((double) trips.size() / processorsToUse) + 1;
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
+        logger.info("  - {} partitions across {}/{} available processors.", availableProcessors,processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
@@ -898,6 +888,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 // Create the travel time calculator using precomputation
                 travelTime = new BicycleTravelTimePreComp(scenario.getNetwork(), factorProvider);
+                //travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),bicycleConfigGroup,travelTime);
                 break;
             default:
@@ -906,74 +897,32 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 logger.error("No travel time/disutility for mode: " + mode);
         }
 
-        // Pre-cache commonly used objects
-        final Network network = scenario.getNetwork();
-        final Map<Coord, Node> coordToNodeCache = new ConcurrentHashMap<>();
-        final Map<Integer, Person> personCache = new ConcurrentHashMap<>();
-        final Map<String, VehicleType> vehicleTypeCache = new ConcurrentHashMap<>();
-        final boolean isActiveMode = mode.equals(Mode.walk) || mode.equals(Mode.bicycle);
-        final String transportModeString = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
-
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
         // Progress tracking variables
         final int totalTrips = trips.size();
         final AtomicInteger processedTrips = new AtomicInteger(0);
         final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
-
         logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
-
-        //
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
         AtomicInteger counter = new AtomicInteger();
-        logger.info("Partition Size: " + partitionSize);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
-
         for (final List<Trip> partition : partitions) {
 
-            //
-            long start = System.nanoTime();
-            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(network,travelDisutility,travelTime);
-            long end = System.nanoTime();
-            logger.info("Router initialization time: " + (end - start) / 1e9 + " seconds");
+            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
             PopulationFactory factory = PopulationUtils.getFactory();
-
             executor.addTaskToQueue(() -> {
                 try {
-
-                    int id = counter.incrementAndGet();
-
                     for (Trip trip : partition) {
-                        // Update progress counter and log at intervals
-                        int current = processedTrips.incrementAndGet();
-                        if (current % logInterval == 0 || current == totalTrips) {
-                            double percentage = 100.0 * current / totalTrips;
-                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
-                                    day, mode, current, totalTrips, percentage));
-                        }
-
-                        // Cache network node lookups
-                        Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
-                                coord -> NetworkUtils.getNearestNode(network, coord));
-                        Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
-                                coord -> NetworkUtils.getNearestNode(network, coord));
+                        Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
+                        Node destinationNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripDestination());
 
                         // Calculate exposures for outbound path
-                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
+                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes()*60;
 
-                        // Create person and vehicle for active traveller
+                        // Create person and vehicle for each person (i.e., trip) for active traveller
                         Vehicle vehicle = null;
                         org.matsim.api.core.v01.population.Person person = null;
-
-                        if(isActiveMode) {
-                            // Cache person lookup
-                            Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
-                                    personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
-
-                            if (siloPerson == null) {
-                                logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
-                                NO_PATH_TRIP.getAndIncrement();
-                                continue;
-                            }
-
+                        if(mode.equals(Mode.walk)||mode.equals(Mode.bicycle)) {
+                            Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
                             MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
                             int age = siloPerson.getAge();
 
@@ -982,14 +931,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             person.getAttributes().putAttribute("sex",gender.toString());
                             person.getAttributes().putAttribute("age",age);
 
-                            // Cache vehicle type lookup
-                            String vehicleKey = transportModeString + gender + age;
-                            VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
-                                    key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
-
 
                             Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
-                            vehicle = fac.createVehicle(vehicleId, vehicleType);
+                            String key = (mode.equals(Mode.walk)? TransportMode.walk : TransportMode.bike) + gender + age;
+                            VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class));
+                            vehicle = fac.createVehicle(vehicleId,vehicleType);
                         }
 
                         LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
@@ -1019,6 +965,13 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                 calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
                             }
                         }
+                        // Update progress counter and log at intervals
+                        int current = processedTrips.incrementAndGet();
+                        if (current % logInterval == 0 || current == totalTrips) {
+                            double percentage = 100.0 * current / totalTrips;
+                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
+                                    day, mode, current, totalTrips, percentage));
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -1033,8 +986,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
         executor.execute();
 
-        logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
-                day, mode, totalTrips, NO_PATH_TRIP.get(), 100.0 * NO_PATH_TRIP.get() / totalTrips));
+        logger.info("No path trips for mode " + mode + " : " + NO_PATH_TRIP.get());
+
     }
 
     private void calculatePathExposures(Trip trip, LeastCostPathCalculator.Path path, int departureTimeInSecond, TravelTime travelTime, Vehicle vehicle) {
