@@ -653,16 +653,16 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int processorsToUse = Math.min(availableProcessors, 14);
-        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
+        final int partitionSize = Math.max(1, (int) Math.ceil((double) trips.size() / processorsToUse));
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
         logger.info("  - {} partitions across {}/{} available processors.", partitionSize, availableProcessors,processorsToUse);
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
         // Progress tracking variables
         final int totalTrips = trips.size();
         final AtomicInteger processedTrips = new AtomicInteger(0);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
         final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
         logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
         for (final List<Trip> partition : partitions) {
 
             executor.addTaskToQueue(() -> {
@@ -832,8 +832,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int processorsToUse = Math.min(availableProcessors, 14);
-        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
-        logger.info("  - {} partitions across {}/{} available processors.", availableProcessors,processorsToUse);
+        final int partitionSize = Math.max(1, (int) Math.ceil((double) trips.size() / processorsToUse));
+        logger.info("  - {} partitions across {}/{} available processors.", partitionSize, availableProcessors,processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
@@ -904,6 +904,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         final boolean isActiveMode = mode.equals(Mode.walk) || mode.equals(Mode.bicycle);
         final String transportModeString = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
         SpeedyALTFactory routerFactory = new SpeedyALTFactory();
+        // Initialise path calculator once (thread-safe for concurrent use)
+        LeastCostPathCalculator initializer = routerFactory.createPathCalculator(network, travelDisutility, travelTime);
         PopulationFactory populationFactory = PopulationUtils.getFactory();
         // Progress tracking variables
         final int totalTrips = trips.size();
