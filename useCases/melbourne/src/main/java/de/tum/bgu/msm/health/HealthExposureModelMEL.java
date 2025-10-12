@@ -655,7 +655,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         int processorsToUse = Math.min(availableProcessors, 14);
         final int partitionSize = (int) ((double) trips.size() / processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
-        logger.info("  - {} partitions across {}/{} available processors.", availableProcessors,processorsToUse);
+        logger.info("  - {} partitions across {}/{} available processors.", partitionSize, availableProcessors,processorsToUse);
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
         // Progress tracking variables
         final int totalTrips = trips.size();
@@ -896,8 +896,15 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 travelDisutility = null;
                 logger.error("No travel time/disutility for mode: " + mode);
         }
-
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
+        // Pre-cache commonly used objects
+        final Network network = scenario.getNetwork();
+        final Map<Coord, Node> coordToNodeCache = new ConcurrentHashMap<>();
+        final Map<Integer, Person> personCache = new ConcurrentHashMap<>();
+        final Map<String, VehicleType> vehicleTypeCache = new ConcurrentHashMap<>();
+        final boolean isActiveMode = mode.equals(Mode.walk) || mode.equals(Mode.bicycle);
+        final String transportModeString = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
+        SpeedyALTFactory routerFactory = new SpeedyALTFactory();
+        PopulationFactory populationFactory = PopulationUtils.getFactory();
         // Progress tracking variables
         final int totalTrips = trips.size();
         final AtomicInteger processedTrips = new AtomicInteger(0);
@@ -905,37 +912,51 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
         AtomicInteger counter = new AtomicInteger();
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
         for (final List<Trip> partition : partitions) {
-
-            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
-            PopulationFactory factory = PopulationUtils.getFactory();
             executor.addTaskToQueue(() -> {
                 try {
+                    LeastCostPathCalculator pathCalculator = routerFactory.createPathCalculator(network, travelDisutility, travelTime);
                     for (Trip trip : partition) {
-                        Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
-                        Node destinationNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripDestination());
+                        // Cache network node lookups
+                        Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
+                                coord -> NetworkUtils.getNearestNode(network, coord));
+                        Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
+                                coord -> NetworkUtils.getNearestNode(network, coord));
 
                         // Calculate exposures for outbound path
-                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes()*60;
+                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
 
-                        // Create person and vehicle for each person (i.e., trip) for active traveller
+                        // Create person and vehicle for active traveller
                         Vehicle vehicle = null;
                         org.matsim.api.core.v01.population.Person person = null;
-                        if(mode.equals(Mode.walk)||mode.equals(Mode.bicycle)) {
-                            Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+
+                        if(isActiveMode) {
+                            // Cache person lookup
+                            Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
+                                    personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
+
+                            if (siloPerson == null) {
+                                logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
+                                NO_PATH_TRIP.getAndIncrement();
+                                continue;
+                            }
+
                             MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
                             int age = siloPerson.getAge();
 
-                            person = factory.createPerson(Id.createPersonId(trip.getId()));
+                            person = populationFactory.createPerson(Id.createPersonId(trip.getId()));
                             person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
                             person.getAttributes().putAttribute("sex",gender.toString());
                             person.getAttributes().putAttribute("age",age);
 
+                            // Cache vehicle type lookup
+                            String vehicleKey = transportModeString + gender + age;
+                            VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
+                                    key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
 
                             Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
-                            String key = (mode.equals(Mode.walk)? TransportMode.walk : TransportMode.bike) + gender + age;
-                            VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class));
-                            vehicle = fac.createVehicle(vehicleId,vehicleType);
+                            vehicle = fac.createVehicle(vehicleId, vehicleType);
                         }
 
                         LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
@@ -986,7 +1007,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
         executor.execute();
 
-        logger.info("No path trips for mode " + mode + " : " + NO_PATH_TRIP.get());
+        logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
+                day, mode, totalTrips, NO_PATH_TRIP.get(), 100.0 * NO_PATH_TRIP.get() / totalTrips));
 
     }
 
