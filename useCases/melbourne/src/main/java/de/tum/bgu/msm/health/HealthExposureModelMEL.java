@@ -169,13 +169,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         case bicycle:
                         case walk:
                         case pt:
-                            if (fileManager.healthIndicatorFileExists(year, day, mode)) {
-                                logger.info("Loading existing health indicator data for day: {}, mode: {}", day, mode);
-                                // Load existing health indicator data instead of skipping
-                                fileManager.loadHealthIndicatorDataIfExists(year, day, mode, dataContainer, mitoTripsAll);
-                                continue; // Continue to next mode instead of breaking out entirely
-                            }
-
                             // Filter trips for the specific day only
                             mitoTrips = mitoTripsAll.values().stream()
                                     .filter(trip -> trip.getTripMode().equals(mode) && trip.getDepartureDay().equals(day))
@@ -848,7 +841,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int processorsToUse = Math.min(availableProcessors, 14);
-        logger.info("Using {}/{} available processors.", availableProcessors,processorsToUse);
+        logger.info("Using {}/{} available processors.", processorsToUse, availableProcessors);
 
         final int partitionSize = (int) ((double) trips.size() / processorsToUse) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
