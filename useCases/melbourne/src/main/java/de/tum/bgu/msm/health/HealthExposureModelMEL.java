@@ -127,7 +127,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             // Readin full network
             // TODO simplify this
             //Set<Id<Link>> allLinks = scenario.getNetwork().getLinks().keySet();
-            Network networkFull = ((HealthDataContainerImpl) dataContainer).getNetwork();
+            Network networkFull = NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile());
 
 
             //clear the health data from last exposure model year
@@ -194,47 +194,16 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 // Track completed simulated days
                 completedDays.add(day);
-
-                // Load existing traffic flow data
-                loadExistingTrafficFlowData(year, day, networkFull);
-
-                //
                 checkAccumulatedRisksByModeDayHour(networkFull, day, (HealthDataContainerImpl) dataContainer, trafficFlowsByDayModeLinkHour);
 
-                // update injury risks here
+                // update injury risks
                 RunLinkToPersonInjuryRisks(networkFull);
-
                 writeAndClearTrafficFlows(year, networkFull, day);
 
                 // Reset
                 ((DataContainerHealth) dataContainer).getLinkInfo().values().forEach(LinkInfo::reset);
-
-                //
-                /*  COMMENTED OUT FOR MANCHESTER
-                if(completedDays.contains(Day.sunday)){
-                    ((DataContainerHealth) dataContainer).getLinkInfoByDay(Day.sunday).values().forEach(linkInfo -> {linkInfo.reset();});
-                } else if(completedDays.contains(Day.saturday)) {
-                    ((DataContainerHealth) dataContainer).getLinkInfoByDay(Day.saturday).values().forEach(linkInfo -> {
-                        linkInfo.reset();
-                    });
-                }
-                if (weekdays.stream().allMatch(completedDays::contains)) {
-                    logger.info("All weekdays (Monday to Friday) have been processed and are stored in completedDays.");
-                    ((DataContainerHealth) dataContainer).getLinkInfoByDay(Day.thursday).values().forEach(linkInfo -> {
-                        linkInfo.reset();
-                    });
-                }
-                 */
-
-                //
                 ((DataContainerHealth) dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
-                //System.gc();
             }
-
-            // TODO: free memory
-            // write the traffic flows from routed trips and free memory
-            //writeAndClearTrafficFlows(year, networkFull);
-            //System.gc();
 
 
             // assemble home location health exposure data
@@ -312,7 +281,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             // Print results for the current mode
-            System.out.println(); // Empty line for readability
             logger.info("Analysis for day: " + day + ", mode: " + mode);
 
             // Format risk values to 4 significant digits
@@ -339,40 +307,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             PersonHealthMEL personHealth = (PersonHealthMEL) person;
             List<VisitedLink> visitedLinks = personHealth.getVisitedLinks();
             if (visitedLinks == null || visitedLinks.isEmpty()) {
-                //logger.warn("Person " + person.getId() + " has no paths");
                 continue;
             }
-
-            // Map<Day, Map<String, Double>> risksByDayMode = new HashMap<>();
-
             for (VisitedLink visit : visitedLinks) {
                 Link link = network.getLinks().get(visit.linkId); // TODO: this will be the active network :/
                 if (link == null) {
                     //logger.warn("Link " + visit.linkId + " not found in network for person " + person.getId());
                     continue;
                 }
-
-                /*
-                Mode modeForRisk;
-                switch (visit.mode) {
-                    case "car":
-                        modeForRisk = Mode.autoDriver;
-                        break;
-                    case "bike":
-                        modeForRisk = Mode.bicycle;
-                        break;
-                    case "walk":
-                        modeForRisk = Mode.walk;
-                        break;
-                    case "pt":
-                        modeForRisk = Mode.pt;
-                        break;
-                    default:
-                        throw new RuntimeException("Undefined mode " + visit.mode);
-                }
-
-                 */
-
 
                 int flow = trafficFlowsByDayModeLinkHour.getOrDefault(visit.day, new HashMap<>())
                         .getOrDefault(visit.mode, new HashMap<>())
@@ -391,20 +333,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 }else{
                     linkInfo = ((HealthDataContainerImpl) dataContainer).getLinkInfoByDay(visit.day).get(visit.linkId);
                     linkRisk = getLinkInjuryRisk2(visit.mode, visit.hour, linkInfo);
-                    /*
-                    if(linkRisk > 0){
-                        logger.warn("Risk positive !!!");
-                    }
-
-                     */
                     linkRiskPerPerson = flow > 0 ? linkRisk / flow : 0.0;
                 }
-
-                /*
-                risksByDayMode.computeIfAbsent(visit.day, k -> new HashMap<>())
-                        .merge(visit.mode, riskPerTrip, Double::sum);
-
-                 */
 
                 // Age/gender interactions
                 //
@@ -431,32 +361,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         throw new RuntimeException("Undefined mode " + visit.mode);
                 }
             }
-
-            // Store aggregated risks in PersonHealthMEL (implementation-specific)
-            /*
-            for (Map.Entry<Day, Map<String, Double>> dayEntry : risksByDayMode.entrySet()) {
-                Day day = dayEntry.getKey();
-                for (Map.Entry<String, Double> modeEntry : dayEntry.getValue().entrySet()) {
-                    String mode = modeEntry.getKey();
-                    double risk = modeEntry.getValue();
-                    personHealth.updateWeeklyAccidentRisks(Map.of(mode, (float) risk));
-                }
-            }
-
-             */
-
-            /*
-            if(((PersonHealthMEL) person).getWeeklyAccidentRisk("severeFatalInjuryCar") > 0){
-                logger.warn("Person " + person.getId() + " has weekly accident risks by car");
-            }
-            if(((PersonHealthMEL) person).getWeeklyAccidentRisk("severeFatalInjuryWalk") > 0){
-                logger.warn("Person " + person.getId() + " has weekly accident risks by walk");
-            }
-            if(((PersonHealthMEL) person).getWeeklyAccidentRisk("severeFatalInjuryBike") > 0){
-                logger.warn("Person " + person.getId() + " has weekly accident risks by bike");
-            }
-
-             */
 
             // Remove visited links after being used for calculation
             personHealth.getVisitedLinks().clear();
@@ -503,45 +407,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void writeAndClearTrafficFlows(int year, Network network, Day day) {
-
-        List<String> modesToProcess = determineModesToProcess(year, day);
-
-        for (String modeAdjusted : modesToProcess) {
+        for (String modeAdjusted : Set.of("car", "walk", "bike")) {
             writeTrafficFlowsToCSV(year, day, modeAdjusted, network);
+            trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
         }
-
-        // Clear traffic flow data for the day to free memory
-        trafficFlowsByDayModeLinkHour.remove(day);
+        trafficFlowsByDayModeLinkHour.remove(day); // Clear entire day
         System.gc();
-    }
-
-    /**
-     * Loads existing traffic flow data from CSV files into memory for downstream processes.
-     * This ensures that injury risk calculations have access to traffic flow data whether
-     * it comes from fresh processing or existing files.
-     */
-    private void loadExistingTrafficFlowData(int year, Day day, Network network) {
-        List<String> allModes = Arrays.asList("car", "walk", "bike");
-
-        for (String mode : allModes) {
-            fileManager.loadTrafficFlowDataIfExists(year, day, mode, trafficFlowsByDayModeLinkHour, network);
-        }
-    }
-
-    /**
-     * Determines which transport modes need traffic flow processing based on file existence.
-     */
-    private List<String> determineModesToProcess(int year, Day day) {
-        List<String> allModes = Arrays.asList("car", "walk", "bike");
-        List<String> modesToProcess = new ArrayList<>();
-
-        for (String mode : allModes) {
-            if (!fileManager.trafficFlowFileExists(year, day, mode)) {
-                modesToProcess.add(mode);
-            }
-        }
-
-        return modesToProcess;
     }
 
     private void writeTrafficFlowsToCSV(int year, Day day, String mode, Network network) {
