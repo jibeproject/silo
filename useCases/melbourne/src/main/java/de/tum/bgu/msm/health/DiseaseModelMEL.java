@@ -43,7 +43,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
 
     @Override
     public void endYear(int year) {
-        logger.warn("Health disease model end year:" + year);
+        logger.warn("Health disease model end year:{}", year);
         if (year == properties.main.startYear || properties.healthData.exposureModelYears.contains(year)) {
             calculateRelativeRisk();
         }
@@ -96,7 +96,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                         rr = RelativeRisksDisease.calculateForNDVI((PersonHealth) person, (DataContainerHealth) dataContainer);
                         break;
                     default:
-                        logger.error("Unknown exposures " + exposures);
+                        logger.error("Unknown exposures {}", exposures);
                 }
                 ((PersonHealth) person).getRelativeRisksByDisease().put(exposures, rr);
             }
@@ -106,7 +106,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
     public void updateDiseaseProbability(Boolean adjustByRelativeRisk) {
         for (Diseases diseases : Diseases.values()) {
             if (((DataContainerHealth) dataContainer).getHealthTransitionData().get(diseases) == null) {
-                logger.warn("No health transition data for disease: " + diseases.name());
+                logger.warn("No health transition data for disease: {}", diseases.name());
                 continue;
             }
 
@@ -130,7 +130,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                 String location = ((ZoneMEL) dataContainer.getGeoData().getZones().get(zoneId)).getCatchmentCode();
                 String compositeKey = ((DataContainerHealth) dataContainer).createTransitionLookupIndex(Math.min(person.getAge(), 100), person.getGender(), location);
                 if (((DataContainerHealth) dataContainer).getHealthTransitionData().get(diseases).get(compositeKey) == null) {
-                    logger.warn("No health transition data for disease: " + diseases + "| " + compositeKey);
+                    logger.warn("No health transition data for disease: {}| {}", diseases, compositeKey);
                     continue;
                 }
 
@@ -149,7 +149,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                 if (((PersonHealth) person).getCurrentDisease().contains(Diseases.diabetes)) {
                     // increase risk to have coronary heart disease
                     if (diseases.equals(Diseases.coronary_heart_disease)) {
-                        if (((PersonHealth) person).getGender().equals(Gender.MALE)) {
+                        if (person.getGender().equals(Gender.MALE)) {
                             sickRate *= 2.16;
                         } else {
                             sickRate *= 2.82;
@@ -158,7 +158,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
 
                     // increase risk to have stroke
                     if (diseases.equals(Diseases.stroke)) {
-                        if (((PersonHealth) person).getGender().equals(Gender.MALE)) {
+                        if (person.getGender().equals(Gender.MALE)) {
                             sickRate *= 1.83;
                         } else {
                             sickRate *= 2.28;
@@ -177,20 +177,11 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
 
         if(activateInjuries){
             // Prepare fatalities map by mode and age (gender ??)
-            Map<String, Map<String, Double>> FatalityProbabilities = createProbabilityMap();
             CalibrationFactors calibrationFactors = new CalibrationFactors();
             Map<String, EnumMap<Gender, Map<String, InjuryRRTableReader. DataEntry>>> injuryData = ((HealthDataContainerImpl) dataContainer).getHealthInjuryRRdata();
 
             // Set up the injury sampler and process the injured people
             InjurySampler injSampler = new InjurySampler(properties, calibrationFactors, injuryData, random);
-
-            // The target come from the accidentModel, they should be add to the HealthDataContainer
-            /*
-            Map<String, Integer> CasualtiesByMode = new HashMap<>();
-            CasualtiesByMode.put("Car", 200);
-            CasualtiesByMode.put("Walk", 300);
-            CasualtiesByMode.put("Bike", 100);
-             */
 
             // Process injury transitions
             injSampler.processInjuries2(dataContainer);
@@ -200,7 +191,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
     private void initializeHealthDiseaseStates() {
         Map<Integer, List<Diseases>> prevData = ((HealthDataContainerImpl) dataContainer).getPrevalenceData();
         for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
-            if (prevData.keySet().contains(person.getId()) && (!prevData.get(person.getId()).contains(null)) &&
+            if (prevData.containsKey(person.getId()) && (!prevData.get(person.getId()).contains(null)) &&
                     person.getAge() > 17) {
                 List<String> diseaseList = prevData.get(person.getId())  // Returns List<Diseases>
                         .stream()                                      // Convert List to Stream
@@ -209,7 +200,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                 ((PersonHealth) person).getHealthDiseaseTracker().put(Properties.get().main.startYear - 1, diseaseList);
             } else {
                 //start year-1 as initial state
-                ((PersonHealth) person).getHealthDiseaseTracker().put(Properties.get().main.startYear - 1, Arrays.asList("healthy"));
+                ((PersonHealth) person).getHealthDiseaseTracker().put(Properties.get().main.startYear - 1, List.of("healthy"));
             }
         }
     }
@@ -279,7 +270,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
             if (newDisease.isEmpty()) {
                 if (personHealth.getHealthDiseaseTracker().get(year - 1) == null) { // todo: min(keysetTracker) == currentYear ??
                     // newborns
-                    personHealth.getHealthDiseaseTracker().put(year, Arrays.asList("healthy")); // todo: check if redundant ?
+                    personHealth.getHealthDiseaseTracker().put(year, List.of("healthy")); // todo: check if redundant ?
                 } else {
                     //for base year, year-1 is the initial state "healthy"
                     personHealth.getHealthDiseaseTracker().put(year, personHealth.getHealthDiseaseTracker().get(year - 1));
@@ -336,25 +327,4 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
         return fatalityProbabilities;
     }
 
-    /*
-    public String getAgeGroup(int age) {
-        if (age < 18) return "<18";
-        else if (age <= 65) return "18-65";
-        else return "65+";
-    }
-
-    private void processInjuryRisk(Person person, String probabilityKey, Diseases fatalDisease, Diseases injuryDisease, Map<String, Map<String, Double>> FatalityTable) {
-        PersonHealth personHealth = (PersonHealth) person;
-
-        double pFatal = FatalityTable.get(probabilityKey).get(getAgeGroup(person.getAge()));
-
-        if (random.nextDouble() < pFatal) {
-            personHealth.getCurrentDiseaseProb().put(fatalDisease, 1.0f);
-            personHealth.getCurrentDiseaseProb().put(injuryDisease, 0.0f);
-        } else {
-            personHealth.getCurrentDiseaseProb().put(fatalDisease, 0.0f);
-            personHealth.getCurrentDiseaseProb().put(injuryDisease, 1.0f);
-        }
-    }
-     */
 }
