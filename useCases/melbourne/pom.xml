@@ -104,16 +104,6 @@
             <scope>compile</scope>
         </dependency>
         <dependency>
-            <groupId>org.apache.parquet</groupId>
-            <artifactId>parquet-avro</artifactId>
-            <version>1.11.1</version> <!-- Use the latest version available -->
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-common</artifactId>
-            <version>3.3.0</version> <!-- Use the appropriate Hadoop version -->
-        </dependency>
-        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.20.46</version>

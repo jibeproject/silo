@@ -53,6 +53,8 @@ import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
 import routing.travelDisutility.ActiveDisutilityPrecalc;
+import routing.travelTime.BicycleLinkSpeedCalculatorImpl;
+import routing.travelTime.BicycleTravelTime;
 import routing.travelTime.WalkLinkSpeedCalculatorImpl;
 import routing.travelTime.WalkTravelTime;
 
@@ -77,17 +79,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     // private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new HashMap<>();
     private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
 
-    private final HealthOutputFileManager fileManager;
-
-    private final Map<Day, Boolean> linkInfoLoadedCache = new ConcurrentHashMap<>();
-    private final Map<Day, Boolean> activityLocationInfoLoadedCache = new ConcurrentHashMap<>();
-    private final Map<String, Map<Integer, Trip>> processedHealthIndicatorCache = new ConcurrentHashMap<>();
-    private final Map<String, Map<Id<Link>, Map<Integer, Double>>> preComputedRisksByModeLinkHour = new ConcurrentHashMap<>();
-
     public HealthExposureModelMEL(DataContainer dataContainer, Properties properties, Random random, Config config) {
         super(dataContainer, properties, random);
         this.initialMatsimConfig = config;
-        this.fileManager = new HealthOutputFileManager(properties.main.baseDirectory, properties.main.scenarioName);
         //simulatedDays = Arrays.asList(Day.sunday,Day.saturday,Day.thursday);
         //simulatedDays = Arrays.asList(Day.sunday);
         simulatedDays = Arrays.asList(Day.sunday, Day.saturday, Day.friday, Day.thursday, Day.wednesday, Day.tuesday, Day.monday);
@@ -136,7 +130,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             // process ndvi data
-            processNdviData(((HealthDataContainerImpl) dataContainer).getNetwork());
+            processNdviData(NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile()));
 
             // Initialize the table to count the flows for the injury model
             initializeTrafficFlows();
@@ -150,15 +144,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         ? Day.thursday
                         : day;
 
-                loadLinkInfoFromFile(dayForHealthData);
-                logger.warn("Link info for {} loaded.", dayForHealthData);
+                replyLinkInfoFromFile(dayForHealthData);
+                logger.warn("Link info for " + dayForHealthData + " loaded.");
 
-                loadActivityLocationInfoFromFile(dayForHealthData);
-                logger.warn("Activity info for {} loaded.", dayForHealthData);
+                replyActivityLocationInfoFromFile(dayForHealthData);
+                logger.warn("Activity info for " + dayForHealthData + " loaded.");
                 System.gc();
-
-                // Pre-compute risk values
-                preComputeRiskValues(day, networkFull);
 
                 logger.warn("Run health exposure model for " + day);
 
@@ -208,7 +199,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             // assemble home location health exposure data
             for(Day day : Day.values()){
-                loadActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
+                replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
                 calculatePersonHealthExposuresAtHome(day);
                 ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
                 System.gc();
@@ -234,7 +225,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         Day dayForHealthData = weekdays.contains(day)
                 ? Day.thursday
                 : day;
-        // Loop over each mode
+        // Loop over each mode-hour
         for (String mode : modes) {
             // Loop over each mode
             double zeroFlowRisk = 0.0;
@@ -247,9 +238,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 // Loop over all links in the MATSim network
                 for (Link link : network.getLinks().values()) {
-                    // Use pre-computed Risk
-//                    double linkRisk = getPreComputedRiskValue(mode, link.getId(), hour);
-//                    // OR Get link info for the specific day and link
+
+                    // Get link info for the specific day and link
                     LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
                             .getLinkInfoByDay(dayForHealthData)
                             .get(link.getId());
@@ -450,13 +440,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
     }
 
-    private void loadLinkInfoFromFile(Day day) {
-        // Check cache first to avoid repeated loading
-        if (linkInfoLoadedCache.getOrDefault(day, false)) {
-            logger.info("Link info for {} already loaded from cache", day);
-            return;
-        }
-
+    private void replyLinkInfoFromFile(Day day) {
         String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
 
         new LinkInfoReader().readConcentrationData(((DataContainerHealth)dataContainer), outputDirectory + "linkConcentration_" + day + ".csv");
@@ -466,18 +450,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         new LinkInfoReader().readNoiseLevelData(((DataContainerHealth)dataContainer), outputDirectory + "matsim/" + latestMatsimYear, day);
 
-        // Mark as loaded in cache
-        linkInfoLoadedCache.put(day, true);
-        logger.info("Initialized Link Info for " + ((DataContainerHealth) dataContainer).getLinkInfo().size() + " links (cached for reuse)");
+        logger.info("Initialized Link Info for " + ((DataContainerHealth) dataContainer).getLinkInfo().size() + " links ");
+        // todo: I need to initialize the link info for link-based injury risks by accidentType
     }
 
-    private void loadActivityLocationInfoFromFile(Day day) {
-        // Check cache first to avoid repeated loading
-        if (activityLocationInfoLoadedCache.getOrDefault(day, false)) {
-            logger.info("Activity location info for {} already loaded from cache", day);
-            return;
-        }
-
+    private void replyActivityLocationInfoFromFile(Day day) {
         String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
 
         ActivityLocationInfoReader reader = new ActivityLocationInfoReader();
@@ -488,10 +465,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         reader.readConcentrationData(((DataContainerHealth)dataContainer), properties.healthData.busLocationConcentration);
 
         reader.readNoiseLevelData(((DataContainerHealth)dataContainer), outputDirectory + "matsim/" + latestMatsimYear + "/" + day +  "/car/noise-analysis/immissions/");
-
-        // Mark as loaded in cache
-        activityLocationInfoLoadedCache.put(day, true);
-        logger.info("Activity location info for {} loaded and cached for reuse", day);
     }
 
     private void healthDataAssembler(int year, Day day, Mode mode) {
@@ -670,8 +643,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             hourOccupied[exactWeekHour] += (float) durationInThisHour;
 
-            double legPartExposurePm25 = PollutionExposure.getLinkExposurePm25(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_PM25, legTime_s, legMarginalMet);
-            double legPartExposureNo2 = PollutionExposure.getLinkExposureNo2(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_NO2,legTime_s, legMarginalMet);
+            float legPartExposurePm25 = (float) PollutionExposure.getLinkExposurePm25_newexp(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_PM25, legTime_s, legMarginalMet, "none", "none", 1);
+            float legPartExposureNo2 = (float) PollutionExposure.getLinkExposureNo2_newexp(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_NO2,legTime_s, legMarginalMet, "none", "none", 1);
 
             legExposurePm25ByHour[exactWeekHour] += legPartExposurePm25;
             legExposureNo2ByHour[exactWeekHour] += legPartExposureNo2;
@@ -759,7 +732,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 // Create the travel time calculator using precomputation
                 travelTime = new BicycleTravelTimePreComp(scenario.getNetwork(), factorProvider);
-                //travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),bicycleConfigGroup,travelTime);
                 break;
             default:
@@ -1000,9 +972,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             linkInfo.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5_non_exhaust,new OpenIntFloatHashMap()).get(exactDayHour);
                     double linkConcentrationNo2 = linkInfo.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.NO2,new OpenIntFloatHashMap()).get(exactDayHour);
 
-                    linkExposurePm25 = PollutionExposure.getLinkExposurePm25(mode, linkConcentrationPm25, durationInThisHour * 3600, linkMarginalMet);
-                    linkExposureNo2 =PollutionExposure.getLinkExposureNo2(mode, linkConcentrationNo2, durationInThisHour * 3600, linkMarginalMet);
+                    String linkCycleWay = (String) link.getAttributes().getAttribute("cycleway");
+                    String linkCycleOsm = (String) link.getAttributes().getAttribute("cycleosm");
+                    int linkCarAllowed = link.getAllowedModes().contains("car") ? 1 : 0;
 
+                    linkExposurePm25 = PollutionExposure.getLinkExposurePm25_newexp(mode, linkConcentrationPm25, durationInThisHour * 3600, linkMarginalMet, linkCycleWay, linkCycleOsm, linkCarAllowed);
+                    linkExposureNo2 =PollutionExposure.getLinkExposureNo2_newexp(mode, linkConcentrationNo2, durationInThisHour * 3600, linkMarginalMet, linkCycleWay, linkCycleOsm, linkCarAllowed);
                     pathExposurePm25ByHour[exactWeekHour] += (float) linkExposurePm25;
                     pathExposureNo2ByHour[exactWeekHour] += (float) linkExposureNo2;
 
@@ -1147,50 +1122,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
     }
 
-    /**
-     * Helper method to safely extract a specific pollution exposure value from activity location data.
-     * Treats missing exposure data as zero exposure
-     *
-     * @param activityLocation The activity location containing exposure data
-     * @param dayHour The hour of day (0-23) for which to get exposure values
-     * @param exposureType The type of exposure to retrieve ("PM25", "NO2")
-     * @return The exposure value for the specified type, or zero if data is missing
-     */
-    private double getPollutionExposureValue(ActivityLocation activityLocation, int dayHour, String exposureType) {
-        if (activityLocation == null) {
-            return 0.0;
-        }
-
-        Map<Pollutant, OpenIntFloatHashMap> exposureMap = activityLocation.getExposure2Pollutant2TimeBin();
-        if (exposureMap == null) {
-            return 0.0;
-        }
-
-        switch (exposureType.toUpperCase()) {
-            case "PM25":
-                // PM2.5 exposure (exhaust + non-exhaust combined)
-                double pm25Total = 0.0;
-                OpenIntFloatHashMap pm25Map = exposureMap.get(Pollutant.PM2_5);
-                if (pm25Map != null) {
-                    pm25Total += pm25Map.get(dayHour);
-                }
-                OpenIntFloatHashMap pm25NonExhaustMap = exposureMap.get(Pollutant.PM2_5_non_exhaust);
-                if (pm25NonExhaustMap != null) {
-                    pm25Total += pm25NonExhaustMap.get(dayHour);
-                }
-                return pm25Total;
-
-            case "NO2":
-                // NO2 exposure
-                OpenIntFloatHashMap no2Map = exposureMap.get(Pollutant.NO2);
-                return no2Map != null ? no2Map.get(dayHour) : 0.0;
-
-            default:
-                logger.warn("Unknown pollution exposure type: {}", exposureType);
-                return 0.0;
-        }
-    }
-
     private void calculateActivityExposures(Trip trip) {
         float[] hourOccupied = new float[24*7];
         float[] activityExposurePM25ByHour = new float[24*7];
@@ -1234,9 +1165,16 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             if(activityLocation != null) {
 
-                double locationIncrementalPM25 = getPollutionExposureValue(activityLocation, exactDayHour, "PM25");
-                double locationIncrementalNO2 = getPollutionExposureValue(activityLocation, exactDayHour, "NO2");
-                // Air pollution
+                //Air pollutant
+                double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5).get(exactDayHour)+
+                        activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5_non_exhaust).get(exactDayHour);
+                double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.NO2).get(exactDayHour);
+
+                // Corin paper implementation
+                // double exposurePM25 = PollutionExposure.getActivityExposurePm25(durationInThisHour * 60, locationIncrementalPM25);
+                // double exposureNo2 = PollutionExposure.getActivityExposureNo2(durationInThisHour * 60, locationIncrementalNO2);
+
+                // new ventilation
                 double exposurePM25 = PollutionExposure.getActivityExposurePm25_newvent(durationInThisHour * 60, sportweekmMETh, locationIncrementalPM25);
                 double exposureNo2 = PollutionExposure.getActivityExposureNo2_newvent(durationInThisHour * 60, sportweekmMETh, locationIncrementalNO2);
                 activityExposurePM25 += exposurePM25;
@@ -1303,22 +1241,25 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
 
                 if(activityLocation != null) {
-                    // Air pollution
-                    double locationIncrementalPM25 = getPollutionExposureValue(activityLocation, dayHour, "PM25");
-                    double locationIncrementalNO2 = getPollutionExposureValue(activityLocation, dayHour, "NO2");
+                    //Air pollutant
+                    double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5).get(dayHour)+
+                            activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5_non_exhaust).get(dayHour);
+                    double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.NO2).get(dayHour);
 
-                    // new ventilation - fix undefined remainingHour variable
-                    exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25_newvent(60, dayHour, locationIncrementalPM25);
-                    exposureNo2[weekHour] = (float) PollutionExposure.getHomeExposureNo2_newvent(60, dayHour, locationIncrementalNO2);
+                    // Corin paper implementation
+                    // exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25(remainingHour * 60, dayHour, locationIncrementalPM25);
+                    // exposureNo2[weekHour] = (float) PollutionExposure.getHomeExposureNo2(remainingHour * 60, dayHour, locationIncrementalNO2);
 
+                    // new ventilation
+                    exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25_newvent(remainingHour * 60, dayHour, locationIncrementalPM25);
+                    exposureNo2[weekHour] = (float) PollutionExposure.getHomeExposureNo2_newvent(remainingHour * 60, dayHour, locationIncrementalNO2);
                     // Noise level
                     if(!activityLocation.getNoiseLevel2TimeBin().isEmpty()){
-                        exposureNoise[weekHour] = activityLocation.getNoiseLevel2TimeBin().get(dayHour) * 1.0f;
+                        exposureNoise[weekHour] = activityLocation.getNoiseLevel2TimeBin().get(dayHour) * remainingHour;
                     }
 
                     // Green ndvi
-                    ndviExposure += activityLocation.getNdvi() * 1.0;
-
+                    ndviExposure += activityLocation.getNdvi() * remainingHour;
                 }else{
                     logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
                 }
@@ -1394,195 +1335,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             ((PersonHealth) person).setWeeklyGreenExposuresNormalised(((PersonHealthMEL) person).getWeeklyNdviExposure() / sumHour);
         }
-    }
-
-    public void calculateHomeBasedExposureOnly(int year){
-        latestMatsimYear = year;
-        processNdviData(((HealthDataContainerImpl) dataContainer).getNetwork());
-
-        //assemble person home exposure by day by hour
-        for(Day day : Day.values()) {
-            loadActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
-            for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
-
-                double minutesAtHome = 0.;
-                float[] exposurePM25 = new float[24*7];
-                float[] exposureNo2 = new float[24*7];
-                float[] exposureNoise = new float[24*7];
-                double ndviExposure = 0.;
-
-                for (int dayHour = 0; dayHour < 24; dayHour++) {
-                    int weekHour = dayHour + 24 * day.getDayCode();
-                    minutesAtHome += 60;
-
-                    String rpId = ("dd" + person.getHousehold().getDwellingId());
-                    ActivityLocation activityLocation = ((DataContainerHealth) dataContainer).getActivityLocations().get(rpId);
-
-
-                    if (activityLocation != null) {
-                        // Use helper method to get pollution exposure values safely
-                        double locationIncrementalPM25 = getPollutionExposureValue(activityLocation, dayHour, "PM25");
-                        double locationIncrementalNO2 = getPollutionExposureValue(activityLocation, dayHour, "NO2");
-
-                        // new ventilation - fix undefined remainingHour variable
-                        exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25_newvent(60, dayHour, locationIncrementalPM25);
-                        exposureNo2[weekHour] = (float) PollutionExposure.getHomeExposureNo2_newvent(60, dayHour, locationIncrementalNO2);
-
-                        // Noise level
-                        if(!activityLocation.getNoiseLevel2TimeBin().isEmpty()){
-                            exposureNoise[weekHour] = activityLocation.getNoiseLevel2TimeBin().get(dayHour) * 1.0f;
-                        }
-
-                        // Green ndvi
-                        ndviExposure += activityLocation.getNdvi() * 1.0;
-
-                    }else{
-                        logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
-                    }
-                }
-
-
-                ((PersonHealth) person).updateWeeklyHomeMinutes((float) minutesAtHome);
-                ((PersonHealth) person).updateWeeklyPollutionExposuresByHour(Map.of(
-                        "pm2.5", exposurePM25,
-                        "no2", exposureNo2
-                ));
-                ((PersonHealth) person).updateWeeklyNoiseExposuresByHour(exposureNoise);
-                ((PersonHealth) person).updateWeeklyGreenExposures((float) ndviExposure);
-
-            }
-
-            ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
-            System.gc();
-        }
-
-
-        //normalized person's home exposure over a week
-        for(Person person : dataContainer.getHouseholdDataManager().getPersons()) {
-            float sumHour = 168.f;
-            float sumNightHour = 56.f;
-            float sumExposurePM25_normalized = 0.f;
-            float sumExposureNo2_normalized = 0.f;
-            float sumExposureNoise = 0.f;
-            float sumExposureNoiseNight = 0.f;
-
-            Map<String, float[]> weeklyPollutionExposures = ((PersonHealth) person).getWeeklyPollutionExposures();
-            float[] weeklyNoiseExposureByHour = ((PersonHealth) person).getWeeklyNoiseExposureByHour();
-
-            for (int weekHour = 0;  weekHour < 168; weekHour++) {
-                int dayHour = weekHour % 24;
-
-                double min_ventilation_rate = 0.;
-                if (dayHour <= 7){
-                    //"minimum"  ventilation rate = 0.27 (v_sleep)
-                    min_ventilation_rate = 0.27;
-                } else {
-                    //"minimum"  ventilation rate = 0.61 (v_rest)
-                    min_ventilation_rate = 0.61;
-                }
-
-                sumExposurePM25_normalized += (float) (weeklyPollutionExposures.get("pm2.5")[weekHour]/min_ventilation_rate);
-                sumExposureNo2_normalized += (float) (weeklyPollutionExposures.get("no2")[weekHour]/min_ventilation_rate);
-
-
-                float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]));
-                sumExposureNoise += hourlyNoiseLevel;
-
-                if (dayHour <= 7){
-                    sumExposureNoiseNight += hourlyNoiseLevel;
-                }
-            }
-
-
-
-            ((PersonHealth) person).setWeeklyExposureByPollutantNormalised(
-                    Map.of(
-                            "pm2.5", (float) (sumExposurePM25_normalized / sumHour),
-                            "no2", (float) (sumExposureNo2_normalized / sumHour)
-                    )
-            );
-
-            float Lden = (float) (10 * Math.log10(sumExposureNoise / sumHour));
-            float Lnight = (float) (10 * Math.log10(sumExposureNoiseNight / sumNightHour));
-            ((PersonHealth) person).setWeeklyNoiseExposuresNormalised (Lden);
-            ((PersonHealthMEL) person).setNoiseHighAnnoyedPercentage((float) NoiseMetrics.getHighAnnoyedPercentage(Lden));
-            ((PersonHealthMEL) person).setNoiseHighSleepDisturbancePercentage((float) NoiseMetrics.getHighSleepDisturbancePercentage(Lnight));
-
-            ((PersonHealth) person).setWeeklyGreenExposuresNormalised(((PersonHealthMEL) person).getWeeklyNdviExposure() / sumHour);
-        }
-    }
-
-    private void preComputeRiskValues(Day day, Network network) {
-
-        Day dayForHealthData = weekdays.contains(day) ? Day.thursday : day;
-        List<String> modes = Arrays.asList("car", "bike", "walk");
-
-        long startTime = System.nanoTime();
-        AtomicInteger totalComputations = new AtomicInteger(0);
-        AtomicInteger nonZeroRiskCount = new AtomicInteger(0);
-
-        // Process modes in parallel to reduce overall computation time
-        modes.parallelStream().forEach(mode -> {
-            // Use a regular HashMap for thread-local computation, then put once into ConcurrentHashMap
-            Map<Id<Link>, Map<Integer, Double>> linkHourRiskMap = new HashMap<>();
-
-            // Get all relevant links upfront to avoid repeated filtering
-            List<Link> relevantLinks = network.getLinks().values().stream()
-                .filter(link -> {
-                    LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
-                            .getLinkInfoByDay(dayForHealthData)
-                            .get(link.getId());
-                    return linkInfo != null;
-                })
-                .collect(Collectors.toList());
-
-            // Process links in parallel for each mode
-            Map<Id<Link>, Map<Integer, Double>> concurrentResults = relevantLinks.parallelStream()
-                .collect(Collectors.toConcurrentMap(
-                    Link::getId,
-                    link -> {
-                        LinkInfo linkInfo = ((HealthDataContainerImpl) dataContainer)
-                                .getLinkInfoByDay(dayForHealthData)
-                                .get(link.getId());
-
-                        // Pre-allocate the hour map with known size
-                        Map<Integer, Double> hourRiskMap = new HashMap<>(24);
-
-                        for (int hour = 0; hour < 24; hour++) {
-                            double linkRisk = getLinkInjuryRisk2(mode, hour, linkInfo);
-                            hourRiskMap.put(hour, linkRisk);
-                            totalComputations.incrementAndGet();
-
-                            if (linkRisk > 0) {
-                                nonZeroRiskCount.incrementAndGet();
-                            }
-                        }
-
-                        return hourRiskMap;
-                    }
-                ));
-
-            // Single atomic operation to update the main map
-            preComputedRisksByModeLinkHour.put(mode, concurrentResults);
-        });
-
-        long endTime = System.nanoTime();
-        double computationTimeSeconds = (endTime - startTime) / 1e9;
-
-        logger.info("Pre-computed {} risk values for {} ({} non-zero risk links)",
-                   totalComputations.get(), day, nonZeroRiskCount.get()
-                );
-    }
-
-    /**
-     * Optimized method to get pre-computed risk value, eliminating the getRiskValue2 bottleneck.
-     * Returns cached risk value instead of computing it repeatedly.
-     */
-    private double getPreComputedRiskValue(String mode, Id<Link> linkId, int hour) {
-        return preComputedRisksByModeLinkHour
-                .getOrDefault(mode, new ConcurrentHashMap<>())
-                .getOrDefault(linkId, new ConcurrentHashMap<>())
-                .getOrDefault(hour, 0.0);
     }
 
     private String getReceiverPointId(String tripDestinationType, int tripDestinationMicroId) {
@@ -1820,6 +1572,121 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             if (link!=null){
                 locationInfo.setNdvi((Double) link.getAttributes().getAttribute("ndvi"));
             }
+        }
+    }
+
+    public void calculateHomeBasedExposureOnly(int year){
+        latestMatsimYear = year;
+        processNdviData(NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile()));
+
+        //assemble person home exposure by day by hour
+        for(Day day : Day.values()) {
+            replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
+            for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
+
+                double minutesAtHome = 0.;
+                float[] exposurePM25 = new float[24 * 7];
+                float[] exposureNo2 = new float[24 * 7];
+                float[] exposureNoise = new float[24 * 7];
+                double ndviExposure = 0.;
+
+                for (int dayHour = 0; dayHour < 24; dayHour++) {
+                    int weekHour = dayHour + 24 * day.getDayCode();
+                    minutesAtHome += 60;
+
+                    String rpId = ("dd" + person.getHousehold().getDwellingId());
+                    ActivityLocation activityLocation = ((DataContainerHealth) dataContainer).getActivityLocations().get(rpId);
+
+
+                    if (activityLocation != null) {
+                        //Air pollutant
+                        double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5).get(dayHour) +
+                                activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5_non_exhaust).get(dayHour);
+                        double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.NO2).get(dayHour);
+
+                        exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25(60, dayHour, locationIncrementalPM25);
+                        exposureNo2[weekHour] = (float) PollutionExposure.getHomeExposureNo2(60, dayHour, locationIncrementalNO2);
+
+                        // Noise level
+                        if (!activityLocation.getNoiseLevel2TimeBin().isEmpty()) {
+                            exposureNoise[weekHour] = activityLocation.getNoiseLevel2TimeBin().get(dayHour);
+                        }
+
+                        // Green ndvi
+                        ndviExposure += activityLocation.getNdvi();
+                    } else {
+                        logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
+                    }
+                }
+
+
+                ((PersonHealth) person).updateWeeklyHomeMinutes((float) minutesAtHome);
+                ((PersonHealth) person).updateWeeklyPollutionExposuresByHour(Map.of(
+                        "pm2.5", exposurePM25,
+                        "no2", exposureNo2
+                ));
+                ((PersonHealth) person).updateWeeklyNoiseExposuresByHour(exposureNoise);
+                ((PersonHealth) person).updateWeeklyGreenExposures((float) ndviExposure);
+
+            }
+
+            ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
+            System.gc();
+        }
+
+
+        //normalized person's home exposure over a week
+        for(Person person : dataContainer.getHouseholdDataManager().getPersons()) {
+            float sumHour = 168.f;
+            float sumNightHour = 56.f;
+            float sumExposurePM25_normalized = 0.f;
+            float sumExposureNo2_normalized = 0.f;
+            float sumExposureNoise = 0.f;
+            float sumExposureNoiseNight = 0.f;
+
+            Map<String, float[]> weeklyPollutionExposures = ((PersonHealth) person).getWeeklyPollutionExposures();
+            float[] weeklyNoiseExposureByHour = ((PersonHealth) person).getWeeklyNoiseExposureByHour();
+
+            for (int weekHour = 0;  weekHour < 168; weekHour++) {
+                int dayHour = weekHour % 24;
+
+                double min_ventilation_rate = 0.;
+                if (dayHour <= 7  || dayHour > 23 ){
+                    //"minimum"  ventilation rate = 0.27 (v_sleep)
+                    min_ventilation_rate = 0.27;
+                } else {
+                    //"minimum"  ventilation rate = 0.61 (v_rest)
+                    min_ventilation_rate = 0.61;
+                }
+
+                sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/min_ventilation_rate;
+                sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/min_ventilation_rate;
+
+
+                float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]));
+                sumExposureNoise += hourlyNoiseLevel;
+
+                if (dayHour <= 7  || dayHour > 23 ){
+                    sumExposureNoiseNight += hourlyNoiseLevel;
+                }
+            }
+
+
+
+            ((PersonHealth) person).setWeeklyExposureByPollutantNormalised(
+                    Map.of(
+                            "pm2.5", (float) (sumExposurePM25_normalized / sumHour),
+                            "no2", (float) (sumExposureNo2_normalized / sumHour)
+                    )
+            );
+
+            float Lden = (float) (10 * Math.log10(sumExposureNoise / sumHour));
+            float Lnight = (float) (10 * Math.log10(sumExposureNoiseNight / sumNightHour));
+            ((PersonHealth) person).setWeeklyNoiseExposuresNormalised (Lden);
+            ((PersonHealthMEL) person).setNoiseHighAnnoyedPercentage((float) NoiseMetrics.getHighAnnoyedPercentage(Lden));
+            ((PersonHealthMEL) person).setNoiseHighSleepDisturbancePercentage((float) NoiseMetrics.getHighSleepDisturbancePercentage(Lnight));
+
+            ((PersonHealth) person).setWeeklyGreenExposuresNormalised(((PersonHealthMEL) person).getWeeklyNdviExposure() / sumHour);
         }
     }
 
