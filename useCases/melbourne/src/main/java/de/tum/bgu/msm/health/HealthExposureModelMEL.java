@@ -60,6 +60,10 @@ import routing.travelTime.WalkTravelTime;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
@@ -79,12 +83,108 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     // private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new HashMap<>();
     private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
 
+    private final Map<Mode, Network> networkByMode = new EnumMap<>(Mode.class);
+    private final Map<Mode, Map<Coord, Node>> coordToNodeCacheByMode = new EnumMap<>(Mode.class);
+    private final Map<Mode, Map<String, VehicleType>> vehicleTypeCacheByMode = new EnumMap<>(Mode.class);
+    private final Map<Mode, Boolean> isActiveModeByMode = new EnumMap<>(Mode.class);
+    private final Map<Mode, String> transportModeStringByMode = new EnumMap<>(Mode.class);
+    private final Map<Mode, MutableScenario> baseScenarioByMode = new EnumMap<>(Mode.class);
+    private final Map<Integer, Person> personCache = new ConcurrentHashMap<>();
+    private final SpeedyALTFactory routerFactory = new SpeedyALTFactory();
+    private final int processorsToUse;
+
     public HealthExposureModelMEL(DataContainer dataContainer, Properties properties, Random random, Config config) {
         super(dataContainer, properties, random);
         this.initialMatsimConfig = config;
-        //simulatedDays = Arrays.asList(Day.sunday,Day.saturday,Day.thursday);
-        //simulatedDays = Arrays.asList(Day.sunday);
         simulatedDays = Arrays.asList(Day.sunday, Day.saturday, Day.friday, Day.thursday, Day.wednesday, Day.tuesday, Day.monday);
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        this.processorsToUse = Math.min(availableProcessors, 14);
+        CoefficientLookup.initialise();
+        initializeModeResources();
+    }
+
+    private void initializeModeResources() {
+        logger.info("Initializing mode-specific resources");
+
+        // Load the base scenario once
+        MutableScenario baseScenario = ScenarioUtils.createMutableScenario(initialMatsimConfig);
+        ScenarioUtils.loadScenario(baseScenario);
+        Network fullNetwork = baseScenario.getNetwork();
+
+        // Pre-extract active mode network once
+        Network activeNetwork = extractModeSpecificNetwork(fullNetwork,
+                new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk)));
+
+        for (Mode mode : Mode.values()) {
+            // Skip modes that don't need resources
+            if (!Arrays.asList(Mode.autoDriver, Mode.autoPassenger, Mode.bicycle, Mode.walk, Mode.pt)
+                    .contains(mode)) {
+                continue;
+            }
+
+            // Create a new scenario sharing components with the base scenario
+            MutableScenario modeScenario = ScenarioUtils.createMutableScenario(initialMatsimConfig);
+
+            // Copy all necessary components from base scenario
+            modeScenario.setPopulation(baseScenario.getPopulation());
+            modeScenario.setTransitSchedule(baseScenario.getTransitSchedule());
+            modeScenario.setTransitVehicles(baseScenario.getTransitVehicles());
+            modeScenario.setActivityFacilities(baseScenario.getActivityFacilities());
+
+            // Copy vehicles and vehicle types
+            for (Map.Entry<Id<Vehicle>, ? extends Vehicle> entry : baseScenario.getVehicles().getVehicles().entrySet()) {
+                modeScenario.getVehicles().addVehicle(entry.getValue());
+            }
+            for (Map.Entry<Id<VehicleType>, VehicleType> entry : baseScenario.getVehicles().getVehicleTypes().entrySet()) {
+                modeScenario.getVehicles().addVehicleType(entry.getValue());
+            }
+
+            // Set the appropriate network based on mode
+            if (mode.equals(Mode.walk) || mode.equals(Mode.bicycle)) {
+                modeScenario.setNetwork(activeNetwork);
+                networkByMode.put(mode, activeNetwork);
+            } else {
+                modeScenario.setNetwork(fullNetwork);
+                networkByMode.put(mode, fullNetwork);
+            }
+
+            // Store the complete scenario for this mode
+            baseScenarioByMode.put(mode, modeScenario);
+
+            // Initialize other resources
+            coordToNodeCacheByMode.put(mode, new ConcurrentHashMap<>());
+            vehicleTypeCacheByMode.put(mode, new ConcurrentHashMap<>());
+            isActiveModeByMode.put(mode, mode.equals(Mode.walk) || mode.equals(Mode.bicycle));
+            transportModeStringByMode.put(mode, mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike);
+        }
+
+        logger.info("Mode-specific resources initialized");
+    }
+
+    private MutableScenario cloneScenario(MutableScenario original) {
+        // Create new scenario with same config
+        MutableScenario clone = ScenarioUtils.createMutableScenario(original.getConfig());
+        clone.setNetwork(original.getNetwork());
+        clone.setPopulation(PopulationUtils.createPopulation(original.getConfig()));
+        original.getPopulation().getPersons().forEach((id, person) ->
+                clone.getPopulation().addPerson(person));
+
+        // Copy other components (typically immutable during simulation)
+        clone.setTransitSchedule(original.getTransitSchedule());
+        clone.setTransitVehicles(original.getTransitVehicles());
+        clone.setActivityFacilities(original.getActivityFacilities());
+
+        // Copy vehicles
+        for (Map.Entry<Id<Vehicle>, ? extends Vehicle> entry : original.getVehicles().getVehicles().entrySet()) {
+            clone.getVehicles().addVehicle(entry.getValue());
+        }
+
+        // Copy vehicle types
+        for (Map.Entry<Id<VehicleType>, VehicleType> entry : original.getVehicles().getVehicleTypes().entrySet()) {
+            clone.getVehicles().addVehicleType(entry.getValue());
+        }
+
+        return clone;
     }
 
     @Override
@@ -92,10 +192,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         if (properties.healthData.baseExposureFile != null) {
             new HealthExposuresReader().readData((HealthDataContainerImpl) dataContainer,properties.healthData.baseExposureFile);
         }
-        // Initialize coefficient lookup table once at startup
-        logger.info("Initialising coefficient lookup table for efficient processing...");
-        CoefficientLookup.initialise();
-        logger.info("Coefficient lookup initialised: {}", CoefficientLookup.getStatistics());
     }
 
     @Override
@@ -103,7 +199,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
     @Override
     public void endYear(int year) {
-        //TODO: clean up the code to be compatible for different simulation setting
         if((properties.healthData.baseExposureFile == null && year == properties.main.startYear) || properties.healthData.exposureModelYears.contains(year)) {
             logger.warn("Health model end year:" + year);
             TreeSet<Integer> sortedYears = new TreeSet<>(properties.transportModel.transportModelYears);
@@ -114,13 +209,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             Map<Integer, Trip> mitoTripsAll = new TripReaderHealth().readData(properties.main.baseDirectory + "scenOutput/"
                     + properties.main.scenarioName + "/" + latestMITOYear + "/microData/trips.csv");
 
-            // todo: extract subset for testing !!
-            //mitoTripsAll = TripSelector.selectRandomSubset(mitoTripsAll, 100);
-
-            //
-            // Readin full network
-            // TODO simplify this
-            //Set<Id<Link>> allLinks = scenario.getNetwork().getLinks().keySet();
             Network networkFull = NetworkUtils.readNetwork(initialMatsimConfig.network().getInputFile());
 
 
@@ -470,14 +558,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         final String outputDirectoryRoot = properties.main.baseDirectory + "scenOutput/"
                 + properties.main.scenarioName + "/matsim/" + latestMatsimYear;
 
-        scenario = ScenarioUtils.createMutableScenario(initialMatsimConfig);
-        ScenarioUtils.loadScenario(scenario);
-
-        if (mode.equals(Mode.walk) || mode.equals(Mode.bicycle)) {
-            Network activeNetwork = extractModeSpecificNetwork(scenario.getNetwork(),new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk)));
-            scenario.setNetwork(activeNetwork);
-        }
-
+        // Use the cached scenario for this mode
+        scenario = cloneScenario(baseScenarioByMode.get(mode));
         scenario.getConfig().routing().setRoutingRandomness(0);
         scenario.getConfig().controller().setOutputDirectory(outputDirectoryRoot);
 
@@ -658,7 +740,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             return;
         }
         final int totalTrips = trips.size();
-        logger.info("Processing {} trips for {}, {}", totalTrips, day, mode);
+        logger.info("Processing {} trips for {}, {} using {} processors", totalTrips, day, mode, processorsToUse);
 
         TravelTime travelTime;
         TravelDisutility travelDisutility;
@@ -666,6 +748,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         EnumMap<Mode, EnumMap<MitoGender, Map<Integer,Double>>> allSpeeds = ((DataContainerHealth)dataContainer).getAvgSpeeds();
         VehiclesFactory vehiclesFactory = VehicleUtils.getFactory();
 
+        // Set up mode-specific travel time and disutility calculators
         switch (mode){
             case autoDriver:
             case autoPassenger:
@@ -717,110 +800,165 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             default:
                 travelTime = null;
                 travelDisutility = null;
-                logger.error("No travel time/disutility for mode: " + mode);
+                logger.error("No travel time/disutility for mode: {}", mode);
+                return;
         }
+
         // Pre-cache commonly used objects
-        final Network network = scenario.getNetwork();
-        final Map<Coord, Node> coordToNodeCache = new ConcurrentHashMap<>();
-        final Map<Integer, Person> personCache = new ConcurrentHashMap<>();
-        final Map<String, VehicleType> vehicleTypeCache = new ConcurrentHashMap<>();
-        final boolean isActiveMode = mode.equals(Mode.walk) || mode.equals(Mode.bicycle);
-        final String transportModeString = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
-        logger.info("Processing {} trips for {}, {}", trips.size(), day, mode);
+        final Network network = networkByMode.get(mode);
+        final Map<Coord, Node> coordToNodeCache = coordToNodeCacheByMode.get(mode);
+        final Map<String, VehicleType> vehicleTypeCache = vehicleTypeCacheByMode.get(mode);
+        final boolean isActiveMode = isActiveModeByMode.get(mode);
+        final String transportModeString = transportModeStringByMode.get(mode);
 
-        if (trips.isEmpty()) {
-            logger.info("No trips to process for mode " + mode + ", day " + day);
-            return;
+        // Create path calculator factory - each thread will create its own calculator
+        final SpeedyALTFactory routerFactory = new SpeedyALTFactory();
+
+        // Progress tracking
+        final AtomicInteger processedTrips = new AtomicInteger(0);
+        final int logInterval = Math.max(1, totalTrips / 20);
+
+        // Create work-stealing thread pool for better load balancing
+        ExecutorService executor = Executors.newWorkStealingPool(processorsToUse);
+
+        try {
+            // Use optimal batch size - smaller than partitionSize but not too small
+            // to avoid excessive task creation overhead
+            final int batchSize = Math.max(10, Math.min(100, totalTrips / (processorsToUse * 4)));
+
+            // Submit tasks in batches
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < totalTrips; i += batchSize) {
+                final int startIndex = i;
+                final int endIndex = Math.min(i + batchSize, totalTrips);
+
+                futures.add(executor.submit(() -> {
+                    try {
+                        // Each thread creates its own router with the shared factory
+                        LeastCostPathCalculator pathCalculator = routerFactory.createPathCalculator(
+                                network, travelDisutility, travelTime);
+
+                        // Process each trip in this batch
+                        for (int j = startIndex; j < endIndex; j++) {
+                            Trip trip = trips.get(j);
+                            processSingleTrip(
+                                trip, day, mode, network, travelTime, travelDisutility,
+                                coordToNodeCache, personCache, vehicleTypeCache,
+                                pathCalculator, isActiveMode, transportModeString
+                            );
+
+                            // Log progress at intervals
+                            int processed = processedTrips.incrementAndGet();
+                            if (processed % logInterval == 0 || processed == totalTrips) {
+                                logger.info("{}, {}: Processed {} of {} trips ({:.1f}%)",
+                                    day, mode, processed, totalTrips, 100.0 * processed / totalTrips);
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.error("Error processing trip batch [" + startIndex + "-" + endIndex + "]: " + e.getMessage(), e);
+                    }
+                }));
+            }
+
+            // Wait for all tasks to complete
+            for (Future<?> future : futures) {
+                try {
+                    future.get();
+                } catch (InterruptedException e) {
+                    logger.error("Trip processing interrupted", e);
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (ExecutionException e) {
+                    logger.error("Error during trip processing", e.getCause());
+                }
+            }
+
+        } finally {
+            // Always shut down the executor service
+            executor.shutdown();
         }
 
-        // Create path calculator once
-        SpeedyALTFactory routerFactory = new SpeedyALTFactory();
-        LeastCostPathCalculator pathCalculator = routerFactory.createPathCalculator(network, travelDisutility, travelTime);
+        logger.info("Completed {}, {}: {} trips processed",
+                day, mode, totalTrips);
+    }
+
+    private void processSingleTrip(
+            Trip trip,
+            Day day,
+            Mode mode,
+            Network network,
+            TravelTime travelTime,
+            TravelDisutility travelDisutility,
+            Map<Coord, Node> coordToNodeCache,
+            Map<Integer, Person> personCache,
+            Map<String, VehicleType> vehicleTypeCache,
+            LeastCostPathCalculator pathCalculator,
+            boolean isActiveMode,
+            String transportModeString) {
+
+        VehiclesFactory vehiclesFactory = VehicleUtils.getFactory();
         PopulationFactory populationFactory = PopulationUtils.getFactory();
-        int logInterval = Math.max(1, totalTrips / 20);
-        int processed = 0;
-        int NO_PATH_TRIP = 0;
 
-        for (Trip trip : trips) {
-            // Cache network node lookups
-            Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
-                    coord -> NetworkUtils.getNearestNode(network, coord));
-            Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
-                    coord -> NetworkUtils.getNearestNode(network, coord));
+        // Cache network node lookups
+        Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
+                coord -> NetworkUtils.getNearestNode(network, coord));
+        Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
+                coord -> NetworkUtils.getNearestNode(network, coord));
 
-            // Calculate exposures for outbound path
-            int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
+        // Calculate exposures for outbound path
+        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
 
-            // Create person and vehicle for active traveller
-            Vehicle vehicle = null;
-            org.matsim.api.core.v01.population.Person person = null;
+        // Create person and vehicle for active traveller
+        Vehicle vehicle = null;
+        org.matsim.api.core.v01.population.Person person = null;
 
-            if(isActiveMode) {
-                // Cache person lookup
-                Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
-                        personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
+        if(isActiveMode) {
+            // Cache person lookup
+            Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
+                    personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
 
-                if (siloPerson == null) {
-                    logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
-                    NO_PATH_TRIP++;
-                    continue;
-                }
-
-                MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
-                int age = siloPerson.getAge();
-
-                person = populationFactory.createPerson(Id.createPersonId(trip.getId()));
-                person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
-                person.getAttributes().putAttribute("sex",gender.toString());
-                person.getAttributes().putAttribute("age",age);
-
-                // Cache vehicle type lookup
-                String vehicleKey = transportModeString + gender + age;
-                VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
-                        key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
-
-                Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
-                vehicle = vehiclesFactory.createVehicle(vehicleId, vehicleType);
+            if (siloPerson == null) {
+                logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
+                return;
             }
 
-            LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
-            if(outboundPath == null){
-                logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
-                        "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
-                        "dest coord: [" + trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
-                        "origin node: " + originNode + ", dest node: " + destinationNode);
-                NO_PATH_TRIP++;
-            } else {
-                calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
-            }
+            MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
+            int age = siloPerson.getAge();
 
-            // Calculate exposures for activity & return trip (home-based trips only)
-            // TODO: exposure for activity of non-home-based trips and RRT, currently we do not know their activity duration, so it is not calculated
-            if(trip.isHomeBased()) {
-                calculateActivityExposures(trip);
-                int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
-                LeastCostPathCalculator.Path returnPath = pathCalculator.calcLeastCostPath(destinationNode, originNode,returnDepartureTimeInSeconds,person,vehicle);
-                if(returnPath == null){
-                    logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
-                            "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
-                            "dest coord: [" +  trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
-                            "origin node: " + originNode + ", dest node: " + destinationNode);
-                    NO_PATH_TRIP++;
-                } else {
-                    calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
-                }
-            }
-            // Update progress counter and log at intervals
-            processed++;
-            if (processed % logInterval == 0 || processed == totalTrips) {
-                logger.info("{}, {}: Processed {} of {} trips ({:.1f}%)",
-                        day, mode, processed, totalTrips, 100.0 * processed / totalTrips);
-            }
+            person = populationFactory.createPerson(Id.createPersonId(trip.getId()));
+            person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
+            person.getAttributes().putAttribute("sex",gender.toString());
+            person.getAttributes().putAttribute("age",age);
+
+            // Cache vehicle type lookup
+            String vehicleKey = transportModeString + gender + age;
+            VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
+                    key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
+
+            Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
+            vehicle = vehiclesFactory.createVehicle(vehicleId, vehicleType);
         }
 
-        logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
-                day, mode, totalTrips, NO_PATH_TRIP, 100.0 * NO_PATH_TRIP / totalTrips));
+        LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
+        if(outboundPath == null){
+            logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
+                    "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
+                    "dest coord: [" + trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
+                    "origin node: " + originNode + ", dest node: " + destinationNode);
+        } else {
+            calculatePathExposures(trip, outboundPath, outboundDepartureTimeInSeconds, travelTime, vehicle);
+        }
 
+        // Calculate exposures for activity & return trip (home-based trips only)
+        if(trip.isHomeBased()) {
+            calculateActivityExposures(trip);
+            int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
+
+            LeastCostPathCalculator.Path returnPath = pathCalculator.calcLeastCostPath(destinationNode, originNode, returnDepartureTimeInSeconds, person, vehicle);
+            if(returnPath != null) {
+                calculatePathExposures(trip, returnPath, returnDepartureTimeInSeconds, travelTime, vehicle);
+            }
+        }
     }
 
     private void calculatePathExposures(Trip trip, LeastCostPathCalculator.Path path, int departureTimeInSecond, TravelTime travelTime, Vehicle vehicle) {
@@ -1654,7 +1792,5 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             ((PersonHealth) person).setWeeklyGreenExposuresNormalised(((PersonHealthMEL) person).getWeeklyNdviExposure() / sumHour);
         }
     }
-
-
 }
 
