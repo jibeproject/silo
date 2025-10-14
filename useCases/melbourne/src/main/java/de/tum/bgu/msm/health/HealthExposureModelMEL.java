@@ -149,7 +149,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 replyActivityLocationInfoFromFile(dayForHealthData);
                 logger.warn("Activity info for " + dayForHealthData + " loaded.");
-                System.gc();
 
                 logger.warn("Run health exposure model for " + day);
 
@@ -202,7 +201,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
                 calculatePersonHealthExposuresAtHome(day);
                 ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(ActivityLocation::reset);
-                System.gc();
             }
 
             // normalize person-level home-travel-activity exposure
@@ -401,8 +399,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             writeTrafficFlowsToCSV(year, day, modeAdjusted, network);
             trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
         }
-        trafficFlowsByDayModeLinkHour.remove(day); // Clear entire day
-        System.gc();
+        trafficFlowsByDayModeLinkHour.remove(day);
     }
 
     private void writeTrafficFlowsToCSV(int year, Day day, String mode, Network network) {
@@ -494,112 +491,95 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
-        logger.info("Updating trip health data for mode " + mode + ", day " + day);
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
-        int processorsToUse = Math.min(availableProcessors, 14);
-        final int partitionSize = Math.max(1, (int) Math.ceil((double) trips.size() / processorsToUse));
-        Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
-        logger.info("  - {} partitions across {}/{} available processors.", partitionSize, availableProcessors,processorsToUse);
-        // Progress tracking variables
-        final int totalTrips = trips.size();
-        final AtomicInteger processedTrips = new AtomicInteger(0);
-        AtomicInteger NO_PATH_TRIP = new AtomicInteger();
-        final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
-        logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
-        for (final List<Trip> partition : partitions) {
-
-            executor.addTaskToQueue(() -> {
-                try {
-                    for (Trip trip : partition) {
-
-                        Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
-                        MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
-                        int age = Math.min(siloPerson.getAge(),100);
-                        double walkSpeed = ((DataContainerHealth)dataContainer).getAvgSpeeds().get(Mode.walk).get(gender).get(age);
-
-                        Zone originZone = dataContainer.getGeoData().getZones().get(trip.getTripOriginZone());
-                        Zone destinationZone = dataContainer.getGeoData().getZones().get(trip.getTripDestinationZone());
-
-                        double accessTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptAccess");
-                        double egressTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptEgress");
-                        double totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptTotalTravelTime");
-                        double totalInVehicleTime_s = (totalTravelTime_s - accessTime_s - egressTime_s);
-                        double busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptBusTimeShare");
-
-                        if(Double.isInfinite(accessTime_s) || Double.isInfinite(egressTime_s)||Double.isInfinite(totalTravelTime_s)){
-                            NO_PATH_TRIP.incrementAndGet();
-                            continue;
-                        }
-                        // update access egress time based on person's walk speed;
-                        // default beeline walk speed in MATSim is 3.0 km/h.
-                        // it returns beeline distance. apply detour factor 1.2
-                        accessTime_s = (accessTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
-                        egressTime_s = (egressTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
-
-                        int departureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
-                        processPtLegExposures(trip, Mode.walk, accessTime_s * walkSpeed, accessTime_s, departureTimeInSeconds);
-                        if (busInVehicleTime_s > 0) {
-                            processPtLegExposures(trip, Mode.bus,  -1, busInVehicleTime_s, departureTimeInSeconds + accessTime_s);
-                        }
-
-                        // rail/train part currently no exposure processed, but need to add up travel time
-                        trip.updateMatsimTravelTime(totalInVehicleTime_s-busInVehicleTime_s);
-                        ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
-
-                        processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, departureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
-
-                        if(trip.isHomeBased()) {
-                            calculateActivityExposures(trip);
-                            int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
-
-                            accessTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptAccess");
-                            egressTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptEgress");
-                            totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptTotalTravelTime");
-                            totalInVehicleTime_s = (totalTravelTime_s - accessTime_s - egressTime_s);
-                            busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptBusTimeShare");
-
-                            if(Double.isInfinite(totalTravelTime_s)||Double.isInfinite(accessTime_s) || Double.isInfinite(egressTime_s)){
-                                NO_PATH_TRIP.incrementAndGet();
-                                continue;
-                            }
-                            // update access egress time based on person's walk speed;
-                            // default beeline walk speed in MATSim is 3.0 km/h.
-                            // it returns beeline distance. apply detour factor 1.2
-                            accessTime_s = (accessTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
-                            egressTime_s = (egressTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
-
-                            processPtLegExposures(trip, Mode.walk, accessTime_s * walkSpeed, accessTime_s, returnDepartureTimeInSeconds);
-                            if (busInVehicleTime_s > 0) {
-                                processPtLegExposures(trip, Mode.bus,  -1, busInVehicleTime_s, returnDepartureTimeInSeconds + accessTime_s);
-                            }
-
-                            // rail/train part currently no exposure processed, but need to add up travel time
-                            trip.updateMatsimTravelTime(totalInVehicleTime_s-busInVehicleTime_s);
-                            ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
-
-                            processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, returnDepartureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
-
-                        }
-                        // Update progress counter and log at intervals
-                        int current = processedTrips.incrementAndGet();
-                        if (current % logInterval == 0 || current == totalTrips) {
-                            double percentage = 100.0 * current / totalTrips;
-                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
-                                    day, mode, current, totalTrips, percentage));
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    logger.warn(e.getLocalizedMessage());
-                    throw new RuntimeException(e);
-                }
-                return null;
-            });
+        if (trips.isEmpty()) {
+            logger.info("No trips to process for mode " + mode + ", day " + day);
+            return;
         }
-        executor.execute();
+        final int totalTrips = trips.size();
+        logger.info("Processing {} trips for {}, {}", totalTrips, day, mode);
+        int logInterval = Math.max(1, totalTrips / 20);
+        int processed = 0;
+        int NO_PATH_TRIP = 0;
 
-        logger.info("No path trips for mode " + mode + " : " + NO_PATH_TRIP.get());
+        for (Trip trip : trips) {
+            Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+            MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
+            int age = Math.min(siloPerson.getAge(),100);
+            double walkSpeed = ((DataContainerHealth)dataContainer).getAvgSpeeds().get(Mode.walk).get(gender).get(age);
+
+            Zone originZone = dataContainer.getGeoData().getZones().get(trip.getTripOriginZone());
+            Zone destinationZone = dataContainer.getGeoData().getZones().get(trip.getTripDestinationZone());
+
+            double accessTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptAccess");
+            double egressTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptEgress");
+            double totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptTotalTravelTime");
+            double totalInVehicleTime_s = (totalTravelTime_s - accessTime_s - egressTime_s);
+            double busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptBusTimeShare");
+
+            if(Double.isInfinite(accessTime_s) || Double.isInfinite(egressTime_s)||Double.isInfinite(totalTravelTime_s)){
+                NO_PATH_TRIP++;
+                continue;
+            }
+            // update access egress time based on person's walk speed;
+            // default beeline walk speed in MATSim is 3.0 km/h.
+            // it returns beeline distance. apply detour factor 1.2
+            accessTime_s = (accessTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
+            egressTime_s = (egressTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
+
+            int departureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
+            processPtLegExposures(trip, Mode.walk, accessTime_s * walkSpeed, accessTime_s, departureTimeInSeconds);
+            if (busInVehicleTime_s > 0) {
+                processPtLegExposures(trip, Mode.bus,  -1, busInVehicleTime_s, departureTimeInSeconds + accessTime_s);
+            }
+
+            // rail/train part currently no exposure processed, but need to add up travel time
+            trip.updateMatsimTravelTime(totalInVehicleTime_s-busInVehicleTime_s);
+            ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
+
+            processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, departureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
+
+            if(trip.isHomeBased()) {
+                calculateActivityExposures(trip);
+                int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
+
+                accessTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptAccess");
+                egressTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptEgress");
+                totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptTotalTravelTime");
+                totalInVehicleTime_s = (totalTravelTime_s - accessTime_s - egressTime_s);
+                busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptBusTimeShare");
+
+                if(Double.isInfinite(totalTravelTime_s)||Double.isInfinite(accessTime_s) || Double.isInfinite(egressTime_s)){
+                    NO_PATH_TRIP++;
+                    continue;
+                }
+                // update access egress time based on person's walk speed;
+                // default beeline walk speed in MATSim is 3.0 km/h.
+                // it returns beeline distance. apply detour factor 1.2
+                accessTime_s = (accessTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
+                egressTime_s = (egressTime_s * (3.0 / 3.6) * 1.2) / walkSpeed;
+
+                processPtLegExposures(trip, Mode.walk, accessTime_s * walkSpeed, accessTime_s, returnDepartureTimeInSeconds);
+                if (busInVehicleTime_s > 0) {
+                    processPtLegExposures(trip, Mode.bus,  -1, busInVehicleTime_s, returnDepartureTimeInSeconds + accessTime_s);
+                }
+
+                // rail/train part currently no exposure processed, but need to add up travel time
+                trip.updateMatsimTravelTime(totalInVehicleTime_s-busInVehicleTime_s);
+                ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
+
+                processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, returnDepartureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
+
+            }
+            // Update progress counter and log at intervals
+            processed++;
+            if (processed % logInterval == 0 || processed == totalTrips) {
+                logger.info("{}, {}: Processed {} of {} trips ({:.1f}%)",
+                        day, mode, processed, totalTrips, 100.0 * processed / totalTrips);
+            }
+        }
+
+        logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
+                day, mode, totalTrips, NO_PATH_TRIP, 100.0 * NO_PATH_TRIP / totalTrips));
     }
 
     private void processPtLegExposures(Trip trip, Mode legMode, double legDist_m, double legTime_s, double startTimeInSecond) {
@@ -673,18 +653,18 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void calculateTripHealthIndicator(List<Trip> trips, Day day, Mode mode) {
-        logger.info("Updating trip health data for mode " + mode + ", day " + day);
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
-        int processorsToUse = Math.min(availableProcessors, 14);
-        final int partitionSize = Math.max(1, (int) Math.ceil((double) trips.size() / processorsToUse));
-        logger.info("  - {} partitions across {}/{} available processors.", partitionSize, availableProcessors,processorsToUse);
-        Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
+        if (trips.isEmpty()) {
+            logger.info("No trips to process for mode " + mode + ", day " + day);
+            return;
+        }
+        final int totalTrips = trips.size();
+        logger.info("Processing {} trips for {}, {}", totalTrips, day, mode);
 
         TravelTime travelTime;
         TravelDisutility travelDisutility;
 
         EnumMap<Mode, EnumMap<MitoGender, Map<Integer,Double>>> allSpeeds = ((DataContainerHealth)dataContainer).getAvgSpeeds();
-        VehiclesFactory fac = VehicleUtils.getFactory();
+        VehiclesFactory vehiclesFactory = VehicleUtils.getFactory();
 
         switch (mode){
             case autoDriver:
@@ -702,7 +682,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 // set vehicles
                 for(MitoGender gender : MitoGender.values()) {
                     for(int age = 0 ; age <= 100 ; age++) {
-                        VehicleType walk = fac.createVehicleType(Id.create(TransportMode.walk + gender + age, VehicleType.class));
+                        VehicleType walk = vehiclesFactory.createVehicleType(Id.create(TransportMode.walk + gender + age, VehicleType.class));
                         walk.setMaximumVelocity(allSpeeds.get(Mode.walk).get(gender).get(age));
                         walk.setNetworkMode(TransportMode.walk);
                         walk.setPcuEquivalents(0.);
@@ -720,7 +700,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 // set vehicles
                 for(MitoGender gender : MitoGender.values()) {
                     for(int age = 0 ; age <= 100 ; age++) {
-                        VehicleType bicycle = fac.createVehicleType(Id.create(TransportMode.bike + gender + age, VehicleType.class));
+                        VehicleType bicycle = vehiclesFactory.createVehicleType(Id.create(TransportMode.bike + gender + age, VehicleType.class));
                         bicycle.setMaximumVelocity(allSpeeds.get(Mode.bicycle).get(gender).get(age));
                         bicycle.setNetworkMode(TransportMode.bike);
                         bicycle.setPcuEquivalents(0.);
@@ -746,114 +726,100 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         final Map<String, VehicleType> vehicleTypeCache = new ConcurrentHashMap<>();
         final boolean isActiveMode = mode.equals(Mode.walk) || mode.equals(Mode.bicycle);
         final String transportModeString = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
-        SpeedyALTFactory routerFactory = new SpeedyALTFactory();
-        // Initialise path calculator once (thread-safe for concurrent use)
-        LeastCostPathCalculator initializer = routerFactory.createPathCalculator(network, travelDisutility, travelTime);
-        PopulationFactory populationFactory = PopulationUtils.getFactory();
-        // Progress tracking variables
-        final int totalTrips = trips.size();
-        final AtomicInteger processedTrips = new AtomicInteger(0);
-        final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
-        logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
-        AtomicInteger counter = new AtomicInteger();
-        AtomicInteger NO_PATH_TRIP = new AtomicInteger();
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
-        for (final List<Trip> partition : partitions) {
-            executor.addTaskToQueue(() -> {
-                try {
-                    LeastCostPathCalculator pathCalculator = routerFactory.createPathCalculator(network, travelDisutility, travelTime);
-                    for (Trip trip : partition) {
-                        // Cache network node lookups
-                        Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
-                                coord -> NetworkUtils.getNearestNode(network, coord));
-                        Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
-                                coord -> NetworkUtils.getNearestNode(network, coord));
+        logger.info("Processing {} trips for {}, {}", trips.size(), day, mode);
 
-                        // Calculate exposures for outbound path
-                        int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
-
-                        // Create person and vehicle for active traveller
-                        Vehicle vehicle = null;
-                        org.matsim.api.core.v01.population.Person person = null;
-
-                        if(isActiveMode) {
-                            // Cache person lookup
-                            Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
-                                    personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
-
-                            if (siloPerson == null) {
-                                logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
-                                NO_PATH_TRIP.getAndIncrement();
-                                continue;
-                            }
-
-                            MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
-                            int age = siloPerson.getAge();
-
-                            person = populationFactory.createPerson(Id.createPersonId(trip.getId()));
-                            person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
-                            person.getAttributes().putAttribute("sex",gender.toString());
-                            person.getAttributes().putAttribute("age",age);
-
-                            // Cache vehicle type lookup
-                            String vehicleKey = transportModeString + gender + age;
-                            VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
-                                    key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
-
-                            Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
-                            vehicle = fac.createVehicle(vehicleId, vehicleType);
-                        }
-
-                        LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
-                        if(outboundPath == null){
-                            logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
-                                    "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
-                                    "dest coord: [" + trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
-                                    "origin node: " + originNode + ", dest node: " + destinationNode);
-                            NO_PATH_TRIP.getAndIncrement();
-                        } else {
-                            calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
-                        }
-
-                        // Calculate exposures for activity & return trip (home-based trips only)
-                        // TODO: exposure for activity of non-home-based trips and RRT, currently we do not know their activity duration, so it is not calculated
-                        if(trip.isHomeBased()) {
-                            calculateActivityExposures(trip);
-                            int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
-                            LeastCostPathCalculator.Path returnPath = pathCalculator.calcLeastCostPath(destinationNode, originNode,returnDepartureTimeInSeconds,person,vehicle);
-                            if(returnPath == null){
-                                logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
-                                        "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
-                                        "dest coord: [" +  trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
-                                        "origin node: " + originNode + ", dest node: " + destinationNode);
-                                NO_PATH_TRIP.getAndIncrement();
-                            } else {
-                                calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
-                            }
-                        }
-                        // Update progress counter and log at intervals
-                        int current = processedTrips.incrementAndGet();
-                        if (current % logInterval == 0 || current == totalTrips) {
-                            double percentage = 100.0 * current / totalTrips;
-                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
-                                    day, mode, current, totalTrips, percentage));
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    logger.warn(e.getLocalizedMessage());
-                    throw new RuntimeException(e);
-                }
-                return null;
-            });
-
-            //partition.clear();
-            //System.gc();
+        if (trips.isEmpty()) {
+            logger.info("No trips to process for mode " + mode + ", day " + day);
+            return;
         }
-        executor.execute();
+
+        // Create path calculator once
+        SpeedyALTFactory routerFactory = new SpeedyALTFactory();
+        LeastCostPathCalculator pathCalculator = routerFactory.createPathCalculator(network, travelDisutility, travelTime);
+        PopulationFactory populationFactory = PopulationUtils.getFactory();
+        int logInterval = Math.max(1, totalTrips / 20);
+        int processed = 0;
+        int NO_PATH_TRIP = 0;
+
+        for (Trip trip : trips) {
+            // Cache network node lookups
+            Node originNode = coordToNodeCache.computeIfAbsent(trip.getTripOrigin(),
+                    coord -> NetworkUtils.getNearestNode(network, coord));
+            Node destinationNode = coordToNodeCache.computeIfAbsent(trip.getTripDestination(),
+                    coord -> NetworkUtils.getNearestNode(network, coord));
+
+            // Calculate exposures for outbound path
+            int outboundDepartureTimeInSeconds = trip.getDepartureTimeInMinutes() * 60;
+
+            // Create person and vehicle for active traveller
+            Vehicle vehicle = null;
+            org.matsim.api.core.v01.population.Person person = null;
+
+            if(isActiveMode) {
+                // Cache person lookup
+                Person siloPerson = personCache.computeIfAbsent(trip.getPerson(),
+                        personId -> dataContainer.getHouseholdDataManager().getPersonFromId(personId));
+
+                if (siloPerson == null) {
+                    logger.warn("Person with id " + trip.getPerson() + " not found in data container.");
+                    NO_PATH_TRIP++;
+                    continue;
+                }
+
+                MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
+                int age = siloPerson.getAge();
+
+                person = populationFactory.createPerson(Id.createPersonId(trip.getId()));
+                person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
+                person.getAttributes().putAttribute("sex",gender.toString());
+                person.getAttributes().putAttribute("age",age);
+
+                // Cache vehicle type lookup
+                String vehicleKey = transportModeString + gender + age;
+                VehicleType vehicleType = vehicleTypeCache.computeIfAbsent(vehicleKey,
+                        key -> scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class)));
+
+                Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
+                vehicle = vehiclesFactory.createVehicle(vehicleId, vehicleType);
+            }
+
+            LeastCostPathCalculator.Path outboundPath = pathCalculator.calcLeastCostPath(originNode, destinationNode, outboundDepartureTimeInSeconds, person, vehicle);
+            if(outboundPath == null){
+                logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
+                        "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
+                        "dest coord: [" + trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
+                        "origin node: " + originNode + ", dest node: " + destinationNode);
+                NO_PATH_TRIP++;
+            } else {
+                calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
+            }
+
+            // Calculate exposures for activity & return trip (home-based trips only)
+            // TODO: exposure for activity of non-home-based trips and RRT, currently we do not know their activity duration, so it is not calculated
+            if(trip.isHomeBased()) {
+                calculateActivityExposures(trip);
+                int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
+                LeastCostPathCalculator.Path returnPath = pathCalculator.calcLeastCostPath(destinationNode, originNode,returnDepartureTimeInSeconds,person,vehicle);
+                if(returnPath == null){
+                    logger.warn("trip id: " + trip.getId() + ", trip depart time: " + trip.getDepartureTimeInMinutes() +
+                            "origin coord: [" + trip.getTripOrigin().getX() + "," + trip.getTripOrigin().getY() + "], " +
+                            "dest coord: [" +  trip.getTripDestination().getX() + "," + trip.getTripDestination().getY() + "], " +
+                            "origin node: " + originNode + ", dest node: " + destinationNode);
+                    NO_PATH_TRIP++;
+                } else {
+                    calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
+                }
+            }
+            // Update progress counter and log at intervals
+            processed++;
+            if (processed % logInterval == 0 || processed == totalTrips) {
+                logger.info("{}, {}: Processed {} of {} trips ({:.1f}%)",
+                        day, mode, processed, totalTrips, 100.0 * processed / totalTrips);
+            }
+        }
 
         logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
-                day, mode, totalTrips, NO_PATH_TRIP.get(), 100.0 * NO_PATH_TRIP.get() / totalTrips));
+                day, mode, totalTrips, NO_PATH_TRIP, 100.0 * NO_PATH_TRIP / totalTrips));
 
     }
 
@@ -1631,7 +1597,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
-            System.gc();
         }
 
 
