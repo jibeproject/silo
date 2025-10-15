@@ -565,7 +565,9 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         config.qsim().setNumberOfThreads(16);
         config.transit().setUsingTransitInMobsim(false);
         config.routing().setRoutingRandomness(0.);
-        config.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
+        if (properties.transportModel.includeAccessEgress) {
+            config.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
+        }
         // Set scale factor
         config.qsim().setFlowCapFactor(properties.main.scaleFactor * properties.healthData.matsim_scale_factor_car);
         config.qsim().setStorageCapFactor(properties.main.scaleFactor * properties.healthData.matsim_scale_factor_car);
