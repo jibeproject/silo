@@ -783,7 +783,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         logger.info("Updating trip health data for mode " + mode + ", day " + day);
         int availableProcessors = Runtime.getRuntime().availableProcessors();
         int processorsToUse = Math.min(availableProcessors, 14);
-        logger.info("Using {}/{} available processors.", availableProcessors,processorsToUse);
+        logger.info("Using {}/{} available processors.", processorsToUse, availableProcessors);
 
         final int partitionSize = (int) ((double) trips.size() / processorsToUse) + 1;
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
