@@ -5,6 +5,7 @@ import de.tum.bgu.msm.container.ModelContainer;
 import de.tum.bgu.msm.io.output.MultiFileResultsMonitor;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.utils.SiloUtil;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.core.config.Config;
@@ -23,8 +24,8 @@ public class RunHealthDiseaseLongitudinal {
     private final static Logger logger = LogManager.getLogger(RunHealthDiseaseLongitudinal.class);
 
     public static void main(String[] args) throws IOException {
-        logger.info("Started SILO longitudinal model for Greater Melbourne");
-        logger.info("Scenario properties: " + args[0]);
+        SiloUtil.captureLog(Level.INFO, "Started SILO longitudinal model for Greater Melbourne");
+        SiloUtil.captureLog(Level.INFO, "Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
         Config config = null;
         if (args.length > 1 && args[1] != null) {
