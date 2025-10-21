@@ -81,13 +81,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     private List<Day> weekdays = Arrays.asList(Day.monday,Day.tuesday,Day.wednesday,Day.thursday,Day.friday);
     // private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new HashMap<>();
     private Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour = new ConcurrentHashMap<>();
+    private final int processorsToUse;
 
     public HealthExposureModelMEL(DataContainer dataContainer, Properties properties, Random random, Config config) {
         super(dataContainer, properties, random);
         this.initialMatsimConfig = config;
-        //simulatedDays = Arrays.asList(Day.sunday,Day.saturday,Day.thursday);
-        //simulatedDays = Arrays.asList(Day.sunday);
         simulatedDays = Arrays.asList(Day.sunday, Day.saturday, Day.friday, Day.thursday, Day.wednesday, Day.tuesday, Day.monday);
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        this.processorsToUse = Math.min(availableProcessors, 14);
     }
 
     @Override
@@ -620,13 +621,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 try {
                     for (Trip trip : partition) {
                         // Update progress counter and log at intervals
-                        int current = processedTrips.incrementAndGet();
-                        if (current % logInterval == 0 || current == totalTrips) {
-                            double percentage = 100.0 * current / totalTrips;
-                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
-                                    day, mode, current, totalTrips, percentage));
-                        }
-
                         Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
                         MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
                         int age = Math.min(siloPerson.getAge(),100);
@@ -694,7 +688,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                             processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, returnDepartureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
                         }
-                        counter.incrementAndGet();
+                        int current = processedTrips.incrementAndGet();
+                        if (current % logInterval == 0 || current == totalTrips) {
+                            double percentage = 100.0 * current / totalTrips;
+                            logger.info(String.format("%s, %s: Processed %d/%d trips (%.1f%%)",
+                                    day, mode, current, totalTrips, percentage));
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -781,8 +780,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void calculateTripHealthIndicator(List<Trip> trips, Day day, Mode mode) {
-        logger.info("Updating trip health data for mode " + mode + ", day " + day);
-        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
+        if (trips.isEmpty()) {
+            logger.info("No trips to process for mode " + mode + ", day " + day);
+            return;
+        }
+        final int totalTrips = trips.size();
+        logger.info("Processing {} trips for {}, {} using {} processors", totalTrips, day, mode, processorsToUse);
 
         //final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
         final int partitionSize = (int) ((double) trips.size() / Math.min(Runtime.getRuntime().availableProcessors(), 14)) + 1;
@@ -851,30 +854,20 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         // ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
         //ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
+
+        // Progress tracking
+        final AtomicInteger processedTrips = new AtomicInteger(0);
+        final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
         AtomicInteger counter = new AtomicInteger();
-        logger.info("Partition Size: " + partitionSize);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
 
-
         for (final List<Trip> partition : partitions) {
-
-            //
-            long start = System.nanoTime();
             LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
-            long end = System.nanoTime();
-            logger.info("Router initialization time: " + (end - start) / 1e9 + " seconds");
             PopulationFactory factory = PopulationUtils.getFactory();
 
             executor.addTaskToQueue(() -> {
                 try {
-
-                    int id = counter.incrementAndGet();
-                    int counterr = 0;
                     for (Trip trip : partition) {
-
-                        if(LongMath.isPowerOfTwo(counterr)) {
-                            logger.info(counterr + " in " + id);
-                        }
 
                         Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
                         Node destinationNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripDestination());
@@ -929,8 +922,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                 calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
                             }
                         }
-
-                        counterr++;
+                        int current = processedTrips.incrementAndGet();
+                        if (current % logInterval == 0 || current == totalTrips) {
+                            double percentage = 100.0 * current / totalTrips;
+                            logger.info(String.format("%s, %s: Processed %d/%d trips (%.1f%%)",
+                                    day, mode, current, totalTrips, percentage));
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
