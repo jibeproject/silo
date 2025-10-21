@@ -1627,25 +1627,34 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         Function<org.matsim.api.core.v01.population.Person,double[]> walkWeights = p -> {
             switch ((Purpose) p.getAttributes().getAttribute("purpose")) {
                 case HBW -> {
-                    return new double[]{0.3307472, 0, 4.9887390};
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L131
+                    return new double[]{0, 2.2560371};
                 }
                 case HBE -> {
-                    return new double[]{0, 0, 1.0037846};
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L140
+                    return new double[]{0, 0.8270912};
                 }
-                case HBS, HBR, HBO -> {
-                    if ((int) p.getAttributes().getAttribute("age") < 15) {
-                        return new double[]{0.7789561, 0.4479527 + 2.0418898, 5.8219067};
-                    } else if ((int) p.getAttributes().getAttribute("age") >= 65) {
-                        return new double[]{0.7789561, 0.4479527 + 0.3715017, 5.8219067};
+                case HBR -> {
+                    if ((int) p.getAttributes().getAttribute("age") < 16) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L151
+                        return new double[] {0.6866997, 0.6779886 + 1.0379374};
                     } else {
-                        return new double[]{0.7789561, 0.4479527, 5.8219067};
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L150
+                        return new double[] {0.6866997, 0.6779886};
                     }
                 }
-                case HBA -> {
-                    return new double[]{0.6908324, 0, 0};
+
+                case HBS, HBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L162C120-L162C132
+                    return new double[]{0, 0.3421390};
+                }
+                case NHBW -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L176
+                    return new double[]{0, 4.3210968};
                 }
                 case NHBO -> {
-                    return new double[]{0, 3.4485883, 0};
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L184
+                    return new double[]{0, 5.7158683};
                 }
                 default -> {
                     return null;
@@ -1670,20 +1679,45 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             switch((Purpose) p.getAttributes().getAttribute("purpose")) {
                 case HBW -> {
                     if(p.getAttributes().getAttribute("sex").equals(Gender.FEMALE)) {
-                        return new double[] {35.9032908,2.3084587 + 2.7762033};
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L130
+                        return new double[] {0, 1.1705777 + 1.3119864};
                     } else {
-                        return new double[] {35.9032908,2.3084587};
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L129
+                        return new double[] {0, 1.1705777};
                     }
                 }
                 case HBE -> {
-                    return new double[] {0,4.3075357};
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L139
+                    return new double[] {65.8455067, 2.6375670};
                 }
-                case HBS, HBR, HBO -> {
-                    if((int) p.getAttributes().getAttribute("age") < 15) {
-                        return new double[] {57.0135325,1.2411983 + 6.4243251};
-                    } else {
-                        return new double[] {57.0135325,1.2411983};
+                case HBR -> {
+                    if ((int) p.getAttributes().getAttribute("age") < 16) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L149
+                        return new double[] {8.7270880 + 51.9352371, 0 + 4.6070250};
                     }
+                    else if(p.getAttributes().getAttribute("sex").equals(Gender.FEMALE)) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L148
+                        return new double[] {8.7270880 + 23.5710917, 0 + 1.7298508};
+                    } else {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L147
+                        return new double[] {8.7270880, 0};
+                    }
+                }
+                case HBS, HBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L161
+                    return new double[]{331.2382835, 11.4359257};
+                }
+                case HBA -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L169
+                    return new double[]{21.4115565, 0};
+                }
+                case NHBW -> {
+                   // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L175
+                    return new double[]{0, 3.9477647};
+                }
+                case NHBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L183
+                    return new double[]{0, 2.6660050};
                 }
                 default -> {
                     return null;
