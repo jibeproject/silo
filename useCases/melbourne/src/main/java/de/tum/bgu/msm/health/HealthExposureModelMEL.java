@@ -252,13 +252,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                                    Map<Day, Map<String, Map<Id<Link>, Map<Integer, Integer>>>> trafficFlowsByDayModeLinkHour) {
         // Define modes to loop over
         List<String> modes = Arrays.asList("car", "bike", "walk");
-
-        //
         Day dayForHealthData = weekdays.contains(day)
                 ? Day.thursday
                 : day;
-
-        // Loop over each hour (0 to 23)
+        // Loop over each mode-hour
         for (String mode : modes) {
             // Loop over each mode
             double zeroFlowRisk = 0.0;
@@ -303,14 +300,22 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 }
             }
 
-            // Print results for the current mode and hour
-            System.out.println("Analysis for day: " + day + ", mode: " + mode);
-            System.out.println("Links with Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f%n",
-                    zeroFlowRisk, zeroFlowCount, zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0);
-            System.out.println("Links with Non-Zero Flow:");
-            System.out.printf("  Total Risk: %.4f, Number of Links: %d, Average Risk: %.4f%n",
-                    nonZeroFlowRisk, nonZeroFlowCount, nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0);
+            // Print results for the current mode
+            logger.info("Analysis for day: " + day + ", mode: " + mode);
+
+            // Format risk values to 4 significant digits
+            String formattedZeroFlowRisk = String.format("%.4g", zeroFlowRisk);
+            String formattedZeroFlowAvgRisk = String.format("%.4g",
+                    zeroFlowCount > 0 ? zeroFlowRisk / zeroFlowCount : 0.0);
+
+            String formattedNonZeroFlowRisk = String.format("%.4g", nonZeroFlowRisk);
+            String formattedNonZeroFlowAvgRisk = String.format("%.4g",
+                    nonZeroFlowCount > 0 ? nonZeroFlowRisk / nonZeroFlowCount : 0.0);
+
+            logger.info("  - {} Links with Zero Flow: Total Risk: {}, Average Risk: {}",
+                    zeroFlowCount, formattedZeroFlowRisk, formattedZeroFlowAvgRisk);
+            logger.info(" - {} links with Non-Zero Flow: Total Risk: {}, Average Risk: {}",
+                    nonZeroFlowCount, formattedNonZeroFlowRisk, formattedNonZeroFlowAvgRisk);
             System.out.println(); // Empty line for readability
         }
     }
