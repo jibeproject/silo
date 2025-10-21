@@ -31,9 +31,6 @@ public class CasualtyRateCalculationMEL {
     private int tot_Casualties;
     private int current_Casualties;
 
-    // todo: testing
-    //private Map<Id<Link>, EnumMap<AccidentType, OpenIntFloatHashMap>> severeFatalCasualityRiskByLinkByAccidentTypeByTime = new HashMap<>();
-
     public CasualtyRateCalculationMEL(double scaleFactor, AccidentsContext accidentsContext, AnalysisEventHandler analzyer, AccidentType accidentType, AccidentSeverity accidentSeverity, String basePath, Scenario scenario, double calibrationFactor) {
         this.SCALEFACTOR = scaleFactor;
         this.accidentsContext = accidentsContext;
@@ -148,7 +145,7 @@ public class CasualtyRateCalculationMEL {
 
         switch (accidentSeverity) {
             case SEVEREFATAL:
-                this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
+                this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
                 break;
             default:
                 throw new RuntimeException("Undefined accident severity " + accidentSeverity);
@@ -203,7 +200,7 @@ public class CasualtyRateCalculationMEL {
         int val = 0;
 
         //
-        OpenIntFloatHashMap casualtyRateByTimeOfDay = this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().getOrDefault(accidentType, new OpenIntFloatHashMap());
+        OpenIntFloatHashMap casualtyRateByTimeOfDay = this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().getOrDefault(accidentType, new OpenIntFloatHashMap());
 
         for (int hour = 0; hour < 24; hour++) {
             if(analzyer.getDemand(link.getId(), getMode(accidentType), hour) > 0 && casualtyRateByTimeOfDay.get(hour) == 0) {
@@ -223,7 +220,7 @@ public class CasualtyRateCalculationMEL {
         }
 
         // update map
-        this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
+        this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, casualtyRateByTimeOfDay);
     }
 
     private void printLinkInfo(Link link) {

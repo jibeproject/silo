@@ -401,6 +401,10 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         bikePedConfig.routing().removeModeRoutingParams("walk");
         bikePedConfig.routing().removeModeRoutingParams("pt");
 
+        if (properties.transportModel.includeAccessEgress) {
+            bikePedConfig.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
+        }
+
 
         // BIKE ATTRIBUTES
         List<ToDoubleFunction<Link>> bikeAttributes = new ArrayList<>();

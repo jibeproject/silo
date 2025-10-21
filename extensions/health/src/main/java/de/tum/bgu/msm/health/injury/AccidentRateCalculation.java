@@ -51,10 +51,10 @@ public class AccidentRateCalculation {
 
         switch (accidentSeverity){
             case LIGHT:
-                this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualityExposureByAccidentTypeByTime().put(accidentType, crashRateByTimeOfDay);
+                this.accidentsContext.getLinkId2info().get(link.getId()).getLightCasualtyExposureByAccidentTypeByTime().put(accidentType, crashRateByTimeOfDay);
                 break;
             case SEVEREFATAL:
-                this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, crashRateByTimeOfDay);
+                this.accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, crashRateByTimeOfDay);
                 break;
             default:
                 throw new RuntimeException("Undefined accident severity " + accidentSeverity);
