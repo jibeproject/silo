@@ -397,7 +397,7 @@ public class HealthModelMuc extends AbstractModel implements ModelUpdateListener
     private double[] getLinkSevereFatalInjuryRisk(Mode mode, int hour, LinkInfo linkInfo) {
         double severeInjuryRisk;
         double fatalityRisk;
-        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime();
+        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime();
         switch (mode){
             case autoDriver:
             case autoPassenger:
@@ -421,29 +421,6 @@ public class HealthModelMuc extends AbstractModel implements ModelUpdateListener
 
         return new double[]{severeInjuryRisk,fatalityRisk};
     }
-
-    /*private double getLinkLightInjuryRisk(Mode mode, int hour, LinkInfo linkInfo) {
-        double lightInjuryRisk = 0.;
-        switch (mode){
-            case autoDriver:
-            case autoPassenger:
-                lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.CAR).getOrDefault(hour,0.);
-                break;
-            case bicycle:
-                lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.BIKECAR).getOrDefault(hour,0.);
-                lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.BIKEBIKE).getOrDefault(hour,0.);
-                break;
-            case walk:
-                lightInjuryRisk += linkInfo.getLightCasualityExposureByAccidentTypeByTime().get(AccidentType.PED).getOrDefault(hour,0.);
-                break;
-            default:
-                throw new RuntimeException("Undefined mode " + mode);
-        }
-
-
-        return lightInjuryRisk;
-    }
-*/
 
     //TODO: concurrent
     private void calculatePersonHealthExposures() {

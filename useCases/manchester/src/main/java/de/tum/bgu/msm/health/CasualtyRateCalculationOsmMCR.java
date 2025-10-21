@@ -4,17 +4,11 @@ import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import de.tum.bgu.msm.health.injury.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
-import org.matsim.utils.objectattributes.attributable.Attributes;
-import routing.components.JctStress;
-import routing.components.LinkStress;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.stream.Collectors;
 
 public class CasualtyRateCalculationOsmMCR {
     private static final Logger log = LogManager.getLogger(CasualtyRateCalculationOsmMCR.class);
@@ -33,7 +27,6 @@ public class CasualtyRateCalculationOsmMCR {
     //private int current_Casualties;
 
     // todo: testing
-    //private Map<Id<Link>, EnumMap<AccidentType, OpenIntFloatHashMap>> severeFatalCasualityRiskByLinkByAccidentTypeByTime = new HashMap<>();
 
     public CasualtyRateCalculationOsmMCR(AccidentsContext accidentsContext, AccidentType accidentType, AccidentSeverity accidentSeverity, String basePath) {
         //this.SCALEFACTOR = scaleFactor;
@@ -92,37 +85,8 @@ public class CasualtyRateCalculationOsmMCR {
                 linkCasualtyRateByTime.put(hour, linkCasualtyRate);
             }
             AccidentLinkInfo linkInfo = accidentsContext.getLinkId2info().computeIfAbsent(link.getId(), id -> new AccidentLinkInfo(id));
-            linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime().put(accidentType, linkCasualtyRateByTime);
+            linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime().put(accidentType, linkCasualtyRateByTime);
         }
-
-
-        // testing
-        /*
-        if(osmLink.osmId== 1111480){
-            System.out.println("OSM ID " + osmLink.osmId);
-            System.out.println("===============================================================");
-            printOsmLinkDetails(osmLink);
-            System.out.println("===============================================================");
-            printBinaryLogitCoefficients();
-            System.out.println("===============================================================");
-            for(int hour = 0; hour < 24; hour++) {
-                System.out.println("Hour " + hour + ": " + casualtyRateByTimeOfDay.get(hour));
-            }
-            System.out.println("===============================================================");
-
-            // links
-            for(Link link : osmLink.getNetworkLinks()) {
-                System.out.println("Link ID " + link.getId().toString());
-                System.out.println("===============================================================");
-                for(int hour = 0; hour < 24; hour++) {
-                    float val = accidentsContext.getLinkId2info().get(link.getId()).getSevereFatalCasualityExposureByAccidentTypeByTime().get(accidentType).get(hour);
-                    System.out.println("Hour " + hour + ": " + val);
-                }
-                System.out.println("===============================================================");
-            }
-        }
-
-         */
     }
 
     public void printBinaryLogitCoefficients() {
