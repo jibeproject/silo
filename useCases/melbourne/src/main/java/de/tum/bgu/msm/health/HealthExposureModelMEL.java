@@ -8,6 +8,7 @@ import de.tum.bgu.msm.data.*;
 import de.tum.bgu.msm.data.job.JobMEL;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.person.Person;
+import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.health.data.*;
 import de.tum.bgu.msm.health.diseaseModelOffline.HealthExposuresReader;
 import de.tum.bgu.msm.health.injury.AccidentType;
@@ -22,13 +23,16 @@ import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.util.concurrent.ConcurrentExecutor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.locationtech.jts.geom.Coordinate;
 import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.api.core.v01.population.PopulationFactory;
+import org.matsim.contrib.analysis.vsp.traveltimedistance.TripsExtractor;
 import org.matsim.contrib.dvrp.trafficmonitoring.TravelTimeUtils;
 import org.matsim.contrib.emissions.Pollutant;
 import org.matsim.core.config.Config;
@@ -1619,9 +1623,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     private void fillConfigWithWalkStandardValue(WalkConfigGroup walkConfigGroup) {
         // WALK ATTRIBUTES
         List<ToDoubleFunction<Link>> walkAttributes = new ArrayList<>();
+        walkAttributes.add(l -> Math.max(Math.min(Gradient.getGradient(l),0.5),0.));
+        walkAttributes.add(l -> JctStress.getStressProp(l,TransportMode.walk));
         walkAttributes.add(l -> Math.max(0.,0.81 - LinkAmbience.getVgviFactor(l)));
         walkAttributes.add(l -> Math.min(1.,((double) l.getAttributes().getAttribute("speedLimitMPH")) / 50.));
-        walkAttributes.add(l -> JctStress.getStressProp(l,TransportMode.walk));
 
         // Walk weights
         Function<org.matsim.api.core.v01.population.Person,double[]> walkWeights = p -> {
@@ -1673,6 +1678,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         List<ToDoubleFunction<Link>> bikeAttributes = new ArrayList<>();
         bikeAttributes.add(l -> Math.max(Math.min(Gradient.getGradient(l),0.5),0.));
         bikeAttributes.add(l -> LinkStress.getStress(l, TransportMode.bike));
+        bikeAttributes.add(l -> Math.max(0.,0.81 - LinkAmbience.getVgviFactor(l)));
+        bikeAttributes.add(l -> Math.min(1.,((double) l.getAttributes().getAttribute("speedLimitMPH")) / 50.));
 
         // Bike weights
         Function<org.matsim.api.core.v01.population.Person,double[]> bikeWeights = p -> {
