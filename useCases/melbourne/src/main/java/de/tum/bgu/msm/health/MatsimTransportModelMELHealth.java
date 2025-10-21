@@ -467,7 +467,6 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         List<ToDoubleFunction<Link>> walkAttributes = new ArrayList<>();
         walkAttributes.add(l -> Math.max(0.,0.81 - LinkAmbience.getVgviFactor(l)));
         walkAttributes.add(l -> Math.min(1.,((double) l.getAttributes().getAttribute("speedLimitMPH")) / 50.));
-        walkAttributes.add(l -> JctStress.getStressProp(l,TransportMode.walk));
 
         // Walk weights
         Function<org.matsim.api.core.v01.population.Person,double[]> walkWeights = p -> {
