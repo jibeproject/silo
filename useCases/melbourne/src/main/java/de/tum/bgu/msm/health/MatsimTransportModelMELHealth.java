@@ -23,6 +23,7 @@ import de.tum.bgu.msm.data.Day;
 import de.tum.bgu.msm.data.MitoGender;
 import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.Purpose;
+import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.data.travelTimes.TravelTimes;
 import de.tum.bgu.msm.health.data.DataContainerHealth;
@@ -33,8 +34,7 @@ import de.tum.bgu.msm.matsim.SiloMatsimUtils;
 import de.tum.bgu.msm.models.transportModel.TransportModel;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.properties.modules.TransportModelPropertiesModule;
-import uk.cam.mrc.phm.util.CoefficientLookup;
-import uk.cam.mrc.phm.util.CoefficientLookup.CoefficientSet;
+import io.SpeedsReader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.api.core.v01.Id;
@@ -75,6 +75,7 @@ import routing.BicycleModule;
 
 import java.io.File;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
 
 import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
@@ -115,11 +116,6 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         File file = new File(properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/matsim/initialConfig.xml");
         file.getParentFile().mkdirs();
         ConfigUtils.writeMinimalConfig(initialMatsimConfig, file.getAbsolutePath());
-
-        // Initialize coefficient lookup table once at startup
-        logger.info("Initialising coefficient lookup table for efficient processing...");
-        CoefficientLookup.initialise();
-        logger.info("Coefficient lookup initialised: {}", CoefficientLookup.getStatistics());
 
         final TravelTimes travelTimes = dataContainer.getTravelTimes();
         if (travelTimes instanceof MatsimTravelTimesAndCosts) {
@@ -406,15 +402,115 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         bikePedConfig.routing().removeModeRoutingParams("pt");
 
 
+        // BIKE ATTRIBUTES
+        List<ToDoubleFunction<Link>> bikeAttributes = new ArrayList<>();
+        bikeAttributes.add(l -> Math.max(Math.min(Gradient.getGradient(l),0.5),0.));
+        bikeAttributes.add(l -> LinkStress.getStress(l,TransportMode.bike));
+
+        // Bike weights
+        Function<org.matsim.api.core.v01.population.Person,double[]> bikeWeights = p -> {
+            switch((Purpose) p.getAttributes().getAttribute("purpose")) {
+                case HBW -> {
+                    if(p.getAttributes().getAttribute("sex").equals(Gender.FEMALE)) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L130
+                        return new double[] {0, 1.1705777 + 1.3119864};
+                    } else {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L129
+                        return new double[] {0, 1.1705777};
+                    }
+                }
+                case HBE -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L139
+                    return new double[] {65.8455067, 2.6375670};
+                }
+                case HBR -> {
+                    if ((int) p.getAttributes().getAttribute("age") < 16) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L149
+                        return new double[] {8.7270880 + 51.9352371, 0 + 4.6070250};
+                    }
+                    else if(p.getAttributes().getAttribute("sex").equals(Gender.FEMALE)) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L148
+                        return new double[] {8.7270880 + 23.5710917, 0 + 1.7298508};
+                    } else {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L147
+                        return new double[] {8.7270880, 0};
+                    }
+                }
+                case HBS, HBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L161
+                    return new double[]{331.2382835, 11.4359257};
+                }
+                case HBA -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L169
+                    return new double[]{21.4115565, 0};
+                }
+                case NHBW -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L175
+                    return new double[]{0, 3.9477647};
+                }
+                case NHBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L183
+                    return new double[]{0, 2.6660050};
+                }
+                default -> {
+                    return null;
+                }
+            }
+        };
+
         // Bicycle config group
         BicycleConfigGroup bicycle = (BicycleConfigGroup) bikePedConfig.getModules().get(BicycleConfigGroup.GROUP_NAME);
-        bicycle.setAttributes(BIKE_ATTRIBUTES);
-        bicycle.setWeights(MatsimTransportModelMELHealth::calculateBikeWeights);
+        bicycle.setAttributes(bikeAttributes);
+        bicycle.setWeights(bikeWeights);
+
+        // WALK ATTRIBUTES
+        List<ToDoubleFunction<Link>> walkAttributes = new ArrayList<>();
+        walkAttributes.add(l -> Math.max(0.,0.81 - LinkAmbience.getVgviFactor(l)));
+        walkAttributes.add(l -> Math.min(1.,((double) l.getAttributes().getAttribute("speedLimitMPH")) / 50.));
+
+        // Walk weights
+        Function<org.matsim.api.core.v01.population.Person,double[]> walkWeights = p -> {
+            switch ((Purpose) p.getAttributes().getAttribute("purpose")) {
+                case HBW -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L131
+                    return new double[]{0, 2.2560371};
+                }
+                case HBE -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L140
+                    return new double[]{0, 0.8270912};
+                }
+                case HBR -> {
+                    if ((int) p.getAttributes().getAttribute("age") < 16) {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L151
+                        return new double[] {0.6866997, 0.6779886 + 1.0379374};
+                    } else {
+                        // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L150
+                        return new double[] {0.6866997, 0.6779886};
+                    }
+                }
+
+                case HBS, HBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L162C120-L162C132
+                    return new double[]{0, 0.3421390};
+                }
+                case NHBW -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L176
+                    return new double[]{0, 4.3210968};
+                }
+                case NHBO -> {
+                    // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L184
+                    return new double[]{0, 5.7158683};
+                }
+                default -> {
+                    return null;
+                }
+            }
+        };
 
         // Walk config group
         WalkConfigGroup walkConfigGroup = (WalkConfigGroup) bikePedConfig.getModules().get(WalkConfigGroup.GROUP_NAME);
-        walkConfigGroup.setAttributes(WALK_ATTRIBUTES);
-        walkConfigGroup.setWeights(MatsimTransportModelMELHealth::calculateWalkWeights);
+        walkConfigGroup.setAttributes(walkAttributes);
+        walkConfigGroup.setWeights(walkWeights);
 
         // set scoring parameters
         ModeParams bicycleParams = new ModeParams(TransportMode.bike);
@@ -474,89 +570,6 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
     }
 
-    // Static final attribute lists for efficiency
-    private static final List<ToDoubleFunction<Link>> BIKE_ATTRIBUTES = Arrays.asList(
-            MatsimTransportModelMELHealth::bikeGradient,
-            MatsimTransportModelMELHealth::bikeStress,
-            MatsimTransportModelMELHealth::bikeVgvi,
-            MatsimTransportModelMELHealth::bikeSpeedLimit
-    );
-    private static final List<ToDoubleFunction<Link>> WALK_ATTRIBUTES = Arrays.asList(
-            MatsimTransportModelMELHealth::walkGradient,
-            MatsimTransportModelMELHealth::walkVgvi,
-            MatsimTransportModelMELHealth::walkSpeedLimit,
-            MatsimTransportModelMELHealth::walkJctStress
-    );
-
-    private static double bikeGradient(Link l) {
-        return Math.max(Math.min(Gradient.getGradient(l), 0.5), 0.);
-    }
-    private static double bikeStress(Link l) {
-        return LinkStress.getStress(l, TransportMode.bike);
-    }
-    private static double bikeVgvi(Link l) {
-        return Math.max(0., 0.81 - LinkAmbience.getVgviFactor(l));
-    }
-    private static double bikeSpeedLimit(Link l) {
-        Object attr = l.getAttributes().getAttribute("speedLimitMPH");
-        return attr instanceof Number ? Math.min(1., ((Number) attr).doubleValue() / 50.) : 0.;
-    }
-    private static double walkGradient(Link l) {
-        return Math.max(Math.min(Gradient.getGradient(l), 0.5), 0.);
-    }
-    private static double walkVgvi(Link l) {
-        return Math.max(0., 0.81 - LinkAmbience.getVgviFactor(l));
-    }
-    private static double walkSpeedLimit(Link l) {
-        Object attr = l.getAttributes().getAttribute("speedLimitMPH");
-        return attr instanceof Number ? Math.min(1., ((Number) attr).doubleValue() / 50.) : 0.;
-    }
-    private static double walkJctStress(Link l) {
-        return JctStress.getStressProp(l, TransportMode.walk);
-    }
-
-    public static double[] calculateActiveModeWeights(String mode, Person person) {
-        double grad = 0.0;
-        double stressLink = 0.0;
-        double vgvi = 0.0;
-        double speed = 0.0;
-
-        MitoGender gender = (MitoGender) person.getAttributes().getAttribute("sex");
-        int age = (int) person.getAttributes().getAttribute("age");
-        Purpose purpose = (Purpose) person.getAttributes().getAttribute("purpose");
-        CoefficientSet coeffs = CoefficientLookup.getCoefficients(purpose, mode);
-
-        // Base coefficients
-        grad += coeffs.grad;
-        stressLink += coeffs.stressLink;
-        vgvi += coeffs.vgvi;
-        speed += coeffs.speed;
-
-        if (age >= 16 && gender.equals(MitoGender.FEMALE)) {
-            grad += coeffs.grad_f;
-            stressLink += coeffs.stressLink_f;
-            vgvi += coeffs.vgvi_f;
-            speed += coeffs.speed_f;
-        }
-
-        if (age < 16) {
-            grad += coeffs.grad_c;
-            stressLink += coeffs.stressLink_c;
-            vgvi += coeffs.vgvi_c;
-            speed += coeffs.speed_c;
-        }
-
-        // Return aggregated coefficients
-        return new double[] {grad, stressLink, vgvi, speed};
-    }
-
-    public static double[] calculateBikeWeights(Person person) {
-        return calculateActiveModeWeights("bicycle", person);
-    }
-
-    public static double[] calculateWalkWeights(Person person) {
-        return calculateActiveModeWeights("walk", person);
-    }
 
     private void finalizeCarTruckConfig(Config config, int year, Day day) {
         // Set basic setting
