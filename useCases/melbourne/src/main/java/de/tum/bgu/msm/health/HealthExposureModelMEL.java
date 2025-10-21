@@ -598,6 +598,13 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
 
+        // Progress tracking variables
+        final int totalTrips = trips.size();
+        final AtomicInteger processedTrips = new AtomicInteger(0);
+        final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
+
+        logger.info(String.format("Processing %d trips for %s, %s", totalTrips, day, mode));
+
         AtomicInteger counter = new AtomicInteger();
         logger.info("Partition Size: " + partitionSize);
 
@@ -606,12 +613,13 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         for (final List<Trip> partition : partitions) {
             executor.addTaskToQueue(() -> {
                 try {
-                    int id = counter.incrementAndGet();
-                    int counterr = 0;
                     for (Trip trip : partition) {
-
-                        if(LongMath.isPowerOfTwo(counterr)) {
-                            logger.info(counterr + " in " + id);
+                        // Update progress counter and log at intervals
+                        int current = processedTrips.incrementAndGet();
+                        if (current % logInterval == 0 || current == totalTrips) {
+                            double percentage = 100.0 * current / totalTrips;
+                            logger.info(String.format("%s, %s: Processed %d of %d trips (%.1f%%)",
+                                    day, mode, current, totalTrips, percentage));
                         }
 
                         Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
@@ -681,8 +689,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                             processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, returnDepartureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
                         }
-
-                        counterr++;
+                        counter.incrementAndGet();
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -694,7 +701,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         }
         executor.execute();
 
-        logger.info("No path trips for mode " + mode + " : " + NO_PATH_TRIP.get());
+        logger.info(String.format("Completed %s, %s: %d trips processed, %d trips with no path found (%.1f%%)",
+                day, mode, totalTrips, NO_PATH_TRIP.get(), 100.0 * NO_PATH_TRIP.get() / totalTrips));
     }
 
     private void processPtLegExposures(Trip trip, Mode legMode, double legDist_m, double legTime_s, double startTimeInSecond) {
@@ -971,12 +979,22 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         List<VisitedLink> visitedLinksPath = new ArrayList<>();
 
+        // Pre-compute values that don't vary over trips
+        // mode-specific values
+        final String modeAdjusted = getAdjustedModeName(mode);
+        final boolean isWeekday = weekdays.contains(trip.getDepartureDay());
+        final int dayCode = trip.getDepartureDay().getDayCode();
+
+        // person-specific values
+        final Person tripPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+        final int agePerson = tripPerson.getAge();
+        final Gender genderPerson = tripPerson.getGender();
+
         for(Link link : path.links) {
             double enterTimeInSecond = (double) departureTimeInSecond + pathTime;
 
             // Update counts for traffic flows estimation
             int hour = (int) (enterTimeInSecond / 3600) % 24;
-            String modeAdjusted = getAdjustedModeName(mode);
             trafficFlowsByDayModeLinkHour.get(trip.getDepartureDay())
                     .get(modeAdjusted)
                     .computeIfAbsent(link.getId(), k -> new ConcurrentHashMap<>())
@@ -1015,16 +1033,16 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             if(linkInfo!=null) {
 
-                int dayCode = trip.getDepartureDay().getDayCode();
                 double startDayHour = enterTimeInSecond / 3600.;
                 double endDayHour = (enterTimeInSecond + linkTime)/ 3600.;
+                int currentDayCode = dayCode;
 
                 for(double currentDayHour = startDayHour; currentDayHour < endDayHour;) {
                     //check if start hour is already next day, it could be that trip starts at 23:30, after travelling (e.g. 40 mins), activity start time is next day
                     //the limitation is already we move it to next day, the AP and noise data is still retrived from the current day. because to save memory, we handle trips day by day and only retrive AP noise data of the corresponding day
                     //so it might slightly overestimate the personal exposure, if we use weekday for (next day) saturday
                     if(currentDayHour >= 24){
-                        dayCode++;
+                        currentDayCode++;
                         currentDayHour = currentDayHour - 24;
                         endDayHour = endDayHour - 24;
                     }
@@ -1033,7 +1051,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     int nextDayHour = exactDayHour + 1;
                     double durationInThisHour = Math.min(endDayHour, nextDayHour) - currentDayHour;
 
-                    int exactWeekHour = exactDayHour + 24 * dayCode;
+                    int exactWeekHour = exactDayHour + 24 * currentDayCode;
 
                     if(exactWeekHour > 167){
                         break;
@@ -1091,10 +1109,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 } else {
                     linkInjuryRisk = getLinkInjuryRisk(mode, (int) enterTimeInSecond, linkInfoByDay);
                 }
-
-                //
-                int agePerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson()).getAge();
-                Gender genderPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson()).getGender();
 
                 double AgeGenderRR = 1.;
                 AgeGenderRR = getCasualtyRR_byAge_Gender(genderPerson, agePerson, trip.getTripMode());
