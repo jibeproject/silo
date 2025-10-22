@@ -78,7 +78,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         super(dataContainer, properties, random);
         this.initialMatsimConfig = config;
         simulatedDays = Arrays.asList(Day.sunday, Day.saturday, Day.friday, Day.thursday, Day.wednesday, Day.tuesday, Day.monday);
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int availableProcessors = Runtime.getRuntime().availableProcessors() -1;
         this.processorsToUse = Math.min(availableProcessors, 14);
     }
 
@@ -590,7 +590,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
         logger.info("Updating trip health data for mode {}, day {}", mode, day);
         logger.info("Using{} processors.", processorsToUse);
-        final int partitionSize = (int) ((double) trips.size() / processorsToUse;
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
@@ -778,7 +778,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         final int totalTrips = trips.size();
         logger.info("Processing {} trips for {}, {} using {} processors", totalTrips, day, mode, processorsToUse);
 
-        final int partitionSize = (int) ((double) trips.size() / processorsToUse;
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
