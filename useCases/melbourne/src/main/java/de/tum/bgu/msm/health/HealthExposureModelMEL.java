@@ -78,7 +78,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         super(dataContainer, properties, random);
         this.initialMatsimConfig = config;
         simulatedDays = Arrays.asList(Day.sunday, Day.saturday, Day.friday, Day.thursday, Day.wednesday, Day.tuesday, Day.monday);
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int availableProcessors = Runtime.getRuntime().availableProcessors() -1;
         this.processorsToUse = Math.min(availableProcessors, 14);
     }
 
@@ -140,7 +140,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 replyActivityLocationInfoFromFile(dayForHealthData);
                 logger.warn("Activity info for " + dayForHealthData + " loaded.");
-                System.gc();
+                
 
                 logger.warn("Run health exposure model for " + day);
 
@@ -210,13 +210,13 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 //
                 ((DataContainerHealth) dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
-                //System.gc();
+                //
             }
 
             // TODO: free memory
             // write the traffic flows from routed trips and free memory
             //writeAndClearTrafficFlows(year, networkFull);
-            //System.gc();
+            //
 
 
             // assemble home location health exposure data
@@ -224,7 +224,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
                 calculatePersonHealthExposuresAtHome(day);
                 ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
-                System.gc();
+                
             }
 
             // normalize person-level home-travel-activity exposure
@@ -495,7 +495,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
         }
         trafficFlowsByDayModeLinkHour.remove(day); // Clear entire day
-        System.gc();
+        
     }
 
     private void writeTrafficFlowsToCSV(int year, Day day, String mode, Network network) {
@@ -588,12 +588,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     }
 
     private void calculateTripHealthIndicatorPt(ArrayList<Trip> trips, Day day, Mode mode) {
-        logger.info("Updating trip health data for mode " + mode + ", day " + day);
-        logger.info("Using" + Runtime.getRuntime().availableProcessors() + "available processors." );
-        final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
+        logger.info("Updating trip health data for mode {}, day {}", mode, day);
+        logger.info("Using{} processors.", processorsToUse);
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
 
         // Progress tracking variables
         final int totalTrips = trips.size();
@@ -778,8 +778,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         final int totalTrips = trips.size();
         logger.info("Processing {} trips for {}, {} using {} processors", totalTrips, day, mode, processorsToUse);
 
-        //final int partitionSize = (int) ((double) trips.size() / Runtime.getRuntime().availableProcessors()) + 1;
-        final int partitionSize = (int) ((double) trips.size() / Math.min(Runtime.getRuntime().availableProcessors(), 14)) + 1;
+        final int partitionSize = (int) ((double) trips.size() / processorsToUse);
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
         TravelTime travelTime;
@@ -842,9 +841,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 logger.error("No travel time/disutility for mode: " + mode);
         }
 
-        // ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
-        //ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(processorsToUse);
 
         // Progress tracking
         final AtomicInteger processedTrips = new AtomicInteger(0);
@@ -929,7 +926,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             });
 
             //partition.clear();
-            //System.gc();
+            //
         }
         executor.execute();
 
@@ -1828,7 +1825,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
-            System.gc();
+            
         }
 
 
