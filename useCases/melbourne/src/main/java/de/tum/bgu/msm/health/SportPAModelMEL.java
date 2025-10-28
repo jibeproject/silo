@@ -56,7 +56,7 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
 
             //linear model weekly hour
             double otherSport_wkhr = getPredictor(person, coef.get("linear"));
-            personHealth.setWeeklyMarginalMetHoursSport((float) Math.max(0, otherSport_wkhr *3.));
+            personHealth.setWeeklyMarginalMetHoursSport((float) Math.max(0, otherSport_wkhr));
         }
     }
 
