@@ -1378,9 +1378,10 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                 //TODO: should we eliminate ndvi exposure in night?
                 activityGreenExposure += activityLocation.getNdvi() * durationInThisHour;
 
-            }else{
-                logger.warn("No receiver point info found for rpId: " + rpId + " tripId: " + trip.getTripId());
             }
+            /*else{
+                logger.warn("No receiver point info found for rpId: " + rpId + " tripId: " + trip.getTripId());
+            }*/
 
             currentDayHour = nextDayHour;
         }
@@ -1450,7 +1451,7 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                     // Green ndvi
                     ndviExposure += activityLocation.getNdvi() * remainingHour;
                 }else{
-                    logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
+                    //logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
                 }
             }
 
@@ -1812,7 +1813,7 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                         // Green ndvi
                         ndviExposure += activityLocation.getNdvi();
                     } else {
-                        logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
+                        //logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
                     }
                 }
 
