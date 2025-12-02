@@ -136,7 +136,21 @@ public class DataBuilderHealth {
 
         Network network = NetworkUtils.readNetwork(config.network().getInputFile());
 
-        setLinkInfoMaps(dataContainer, network);
+        // Initialize the main linkInfo map
+        Map<Id<Link>, LinkInfo> linkInfoMap = new HashMap<>();
+        for (Link link : network.getLinks().values()) {
+            linkInfoMap.put(link.getId(), new LinkInfo(link.getId()));
+        }
+        dataContainer.setLinkInfo(linkInfoMap);
+
+        // Initialize separate LinkInfo instances for each day
+        for (Day day : new Day[]{Day.thursday, Day.saturday, Day.sunday}) {
+            Map<Id<Link>, LinkInfo> dayMap = new HashMap<>();
+            for (Link link : network.getLinks().values()) {
+                dayMap.put(link.getId(), new LinkInfo(link.getId()));
+            }
+            dataContainer.setLinkInfoByDay(dayMap, day);
+        }
 
         new PtSkimsReaderMEL(dataContainer).read();
 
@@ -154,37 +168,6 @@ public class DataBuilderHealth {
 
         MicroDataScaler microDataScaler = new MicroDataScaler(dataContainer, properties);
         microDataScaler.scale();
-    }
-
-    private static void setLinkInfoMaps(HealthDataContainerImpl dataContainer, Network network) {
-        // Initialize all maps first
-        Map<Id<Link>, LinkInfo> linkInfoMap = new HashMap<>();
-        Map<Day, Map<Id<Link>, LinkInfo>> dayMaps = new HashMap<>();
-
-        // Pre-create day-specific maps
-        Day[] days = {Day.thursday, Day.saturday, Day.sunday};
-        for (Day day : days) {
-            dayMaps.put(day, new HashMap<>());
-        }
-
-        // Single iteration through network links
-        for (Link link : network.getLinks().values()) {
-            Id<Link> linkId = link.getId();
-
-            // Create LinkInfo for main map
-            linkInfoMap.put(linkId, new LinkInfo(linkId));
-
-            // Create LinkInfo instances for each day
-            for (Day day : days) {
-                dayMaps.get(day).put(linkId, new LinkInfo(linkId));
-            }
-        }
-
-        // Set all maps in the data container
-        dataContainer.setLinkInfo(linkInfoMap);
-        for (Day day : days) {
-            dataContainer.setLinkInfoByDay(dayMaps.get(day), day);
-        }
     }
 
     private static Map<Integer, List<Diseases>> getHealthPrevalenceData(Properties properties) {
