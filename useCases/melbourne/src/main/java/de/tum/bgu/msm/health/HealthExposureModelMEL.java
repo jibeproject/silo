@@ -599,6 +599,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         // Progress tracking variables
         final int totalTrips = trips.size();
+        if (totalTrips==0){
+            logger.info("No trips to process for mode {}, day {}", mode, day);
+            return;
+        }
         final AtomicInteger processedTrips = new AtomicInteger(0);
         final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
 
