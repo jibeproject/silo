@@ -22,6 +22,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Objects;
 
 /**
@@ -33,9 +34,6 @@ import java.util.Objects;
 public class SiloMELAWS {
 
     private final static Logger logger = LogManager.getLogger(SiloMELAWS.class);
-    private final static String outputDir = "/home/ubuntu/jibe/melbourne/scenOutput/base/"; // Replace with your output directory
-    private final static String bucketName = "jibe.model.melbourne";// Replace with your S3 bucket name
-    private final static String folderName = "melbourne/simulationResults/base/"; //Replace with your target folder name in S3 bucket
     private final static String region = "ap-southeast-2";// Replace with your AWS region (e.g., “us-east-1")
     private final static String instanceId = "i-0b6a96bdbf7b41d16"; // Replace with your instance id
 
@@ -44,6 +42,20 @@ public class SiloMELAWS {
         SiloUtil.captureLog(Level.INFO, "Started SILO land use model for Great Melbourne region");
         SiloUtil.captureLog(Level.INFO, "Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
+
+        // Extract scenario name and construct dynamic paths
+        String scenarioName = properties.main.scenarioName;
+        String workingDir = System.getProperty("user.dir");
+        String cityName = Paths.get(workingDir).getFileName().toString();
+
+        String outputDir = workingDir + "/scenOutput/" + scenarioName + "/";
+        String folderName = cityName + "/simulationResults/" + scenarioName + "/";
+
+        logger.info("Working directory: {}", workingDir);
+        logger.info("City name: {}", cityName);
+        logger.info("Scenario name: {}", scenarioName);
+        logger.info("Output directory: {}", outputDir);
+        logger.info("S3 folder name: {}", folderName);
 
         Config config = null;
         if (args.length > 1 && args[1] != null) {
@@ -77,16 +89,17 @@ public class SiloMELAWS {
         File folder = new File(outputDir);        if (!folder.exists() || !folder.isDirectory()) {
             System.out.println("The specified directory does not exist or is not a directory: " + outputDir);
             return;
-        }        uploadDirectoryRecursively(folder, bucketName, folderName, s3Client);        s3Client.close();
+        }
+        uploadDirectoryRecursively(folder, bucketName, folderName, s3Client, outputDir);
+        s3Client.close();
     }
 
 
-    private static void uploadDirectoryRecursively(File folder, String bucketName, String folderName, S3Client s3Client) {
+    private static void uploadDirectoryRecursively(File folder, String bucketName, String folderName, S3Client s3Client, String baseOutputDir) {
         for (File file : Objects.requireNonNull(folder.listFiles())) {
             if (file.isFile()) {
-                // Generate the full key for the file in S3 (include subfolder structure)
                 String keyName = folderName + (folderName.endsWith("/") ? "" : "/") + file.getPath()
-                        .replace(outputDir, "");
+                        .replace(baseOutputDir, "");
                 keyName = keyName.startsWith("/") ? keyName.substring(1) : keyName;                System.out.println("Uploading file: " + keyName);
                 PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                         .bucket(bucketName)
@@ -95,8 +108,7 @@ public class SiloMELAWS {
                 s3Client.putObject(putObjectRequest, Path.of(file.getAbsolutePath()));
                 System.out.println("Uploaded " + keyName + " to bucket " + bucketName);
             } else if (file.isDirectory()) {
-                // Recursively process subdirectories
-                uploadDirectoryRecursively(file, bucketName, folderName, s3Client);
+                uploadDirectoryRecursively(file, bucketName, folderName, s3Client, baseOutputDir);
             }
         }
     }
