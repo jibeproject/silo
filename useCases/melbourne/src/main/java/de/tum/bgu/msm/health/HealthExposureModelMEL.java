@@ -33,6 +33,7 @@ import org.matsim.core.config.Config;
 import org.matsim.core.controler.ControlerDefaults;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.router.FastMultiNodeDijkstraFactory;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
 import org.matsim.core.router.util.TravelDisutility;
@@ -852,7 +853,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
 
         for (final List<Trip> partition : partitions) {
-            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
+            LeastCostPathCalculator pathCalculator = new FastMultiNodeDijkstraFactory().createPathCalculator(
+                    scenario.getNetwork(), travelDisutility, travelTime
+            );
             PopulationFactory factory = PopulationUtils.getFactory();
 
             executor.addTaskToQueue(() -> {
