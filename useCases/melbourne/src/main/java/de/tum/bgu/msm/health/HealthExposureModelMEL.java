@@ -55,6 +55,9 @@ import routing.travelDisutility.ActiveDisutilityPrecalc;
 import routing.travelTime.WalkLinkSpeedCalculatorImpl;
 import routing.travelTime.WalkTravelTime;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.util.*;
@@ -860,15 +863,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             executor.addTaskToQueue(() -> {
                 try {
-                    // Thread-safe timing and resource tracking
-                    ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-                    Runtime runtime = Runtime.getRuntime();
 
                     for (Trip trip : partition) {
-                        long startTime = System.nanoTime();
-                        long startCpuTime = threadMXBean.getCurrentThreadCpuTime();
-                        long startMemory = runtime.totalMemory() - runtime.freeMemory();
-
                         Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
                         Node destinationNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripDestination());
 
@@ -923,31 +919,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             }
                         }
 
-                        // Log trip processing metrics
-                        long endTime = System.nanoTime();
-                        long endCpuTime = threadMXBean.getCurrentThreadCpuTime();
-                        long endMemory = runtime.totalMemory() - runtime.freeMemory();
-
-                        long durationNanos = endTime - startTime;
-                        long cpuTimeNanos = endCpuTime - startCpuTime;
-                        long memoryDelta = endMemory - startMemory;
-
-                        logger.warn(
-                                "Trip metrics - ID: {}, Day: {}, Mode: {}, StartTime: {}s, EndTime: {}s, " +
-                                "Duration: {}ms, StartMemory: {}MB, EndMemory: {}MB, MemoryDelta: {}MB, " +
-                                "StartCPU: {}ms, EndCPU: {}ms, CPUTime: {}ms",
-                                trip.getId(),
-                                day,
-                                mode,
-                                trip.getDepartureTimeInMinutes() * 60,
-                                trip.isHomeBased() ? trip.getDepartureReturnInMinutes() * 60 : "N/A",
-                                durationNanos / 1_000_000,
-                                startMemory / (1024 * 1024), endMemory / (1024 * 1024),
-                                memoryDelta / (1024 * 1024),
-                                startCpuTime / 1_000_000, endCpuTime / 1_000_000,
-                                cpuTimeNanos / 1_000_000
-                        );
-
                         int current = processedTrips.incrementAndGet();
                         if (current % logInterval == 0 || current == totalTrips) {
                             double percentage = 100.0 * current / totalTrips;
@@ -956,8 +927,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
                     logger.warn(e.getLocalizedMessage());
+                    Writer buffer = new StringWriter();
+                    PrintWriter pw = new PrintWriter(buffer);
+                    e.printStackTrace(pw);
+                    logger.warn(buffer.toString());
                     throw new RuntimeException(e);
                 }
                 return null;
