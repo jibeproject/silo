@@ -888,6 +888,24 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
                             String key = (mode.equals(Mode.walk)? TransportMode.walk : TransportMode.bike) + gender + age;
                             VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class));
+                            if (vehicleType == null) {
+                                logger.warn("NULL VEHICLE TYPE DETECTED - Trip: {}, Person: {}, Mode: {}, Purpose: {}, Sex: {}, Age: {}, Key: '{}', Available types count: {}",
+                                        trip.getId(),
+                                        person.getId(),
+                                        mode,
+                                        person.getAttributes().getAttribute("purpose"),
+                                        person.getAttributes().getAttribute("sex"),
+                                        person.getAttributes().getAttribute("age"),
+                                        key,
+                                        scenario.getVehicles().getVehicleTypes().size());
+
+                                // Log first 10 available vehicle type keys for comparison
+                                logger.warn("Sample vehicle type keys, for comparison: {}",
+                                        scenario.getVehicles().getVehicleTypes().keySet().stream()
+                                                .limit(10)
+                                                .map(Id::toString)
+                                                .collect(Collectors.joining(", ")));
+                            }
                             vehicle = fac.createVehicle(vehicleId,vehicleType);
                         }
 
