@@ -33,6 +33,7 @@ import org.matsim.core.config.Config;
 import org.matsim.core.controler.ControlerDefaults;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.router.FastMultiNodeDijkstraFactory;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
 import org.matsim.core.router.util.TravelDisutility;
@@ -54,6 +55,9 @@ import routing.travelDisutility.ActiveDisutilityPrecalc;
 import routing.travelTime.WalkLinkSpeedCalculatorImpl;
 import routing.travelTime.WalkTravelTime;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.Writer;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.util.*;
@@ -856,20 +860,15 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
 
         for (final List<Trip> partition : partitions) {
-            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(scenario.getNetwork(), travelDisutility, travelTime);
+            LeastCostPathCalculator pathCalculator = new FastMultiNodeDijkstraFactory().createPathCalculator(
+                    scenario.getNetwork(), travelDisutility, travelTime
+            );
             PopulationFactory factory = PopulationUtils.getFactory();
 
             executor.addTaskToQueue(() -> {
                 try {
-                    // Thread-safe timing and resource tracking
-                    ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-                    Runtime runtime = Runtime.getRuntime();
 
                     for (Trip trip : partition) {
-                        long startTime = System.nanoTime();
-                        long startCpuTime = threadMXBean.getCurrentThreadCpuTime();
-                        long startMemory = runtime.totalMemory() - runtime.freeMemory();
-
                         Node originNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripOrigin());
                         Node destinationNode = NetworkUtils.getNearestNode(scenario.getNetwork(), trip.getTripDestination());
 
@@ -893,6 +892,24 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
                             String key = (mode.equals(Mode.walk)? TransportMode.walk : TransportMode.bike) + gender + age;
                             VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class));
+                            if (vehicleType == null) {
+                                logger.warn("NULL VEHICLE TYPE DETECTED - Trip: {}, Person: {}, Mode: {}, Purpose: {}, Sex: {}, Age: {}, Key: '{}', Available types count: {}",
+                                        trip.getId(),
+                                        person.getId(),
+                                        mode,
+                                        person.getAttributes().getAttribute("purpose"),
+                                        person.getAttributes().getAttribute("sex"),
+                                        person.getAttributes().getAttribute("age"),
+                                        key,
+                                        scenario.getVehicles().getVehicleTypes().size());
+
+                                // Log first 10 available vehicle type keys for comparison
+                                logger.warn("Sample vehicle type keys, for comparison: {}",
+                                        scenario.getVehicles().getVehicleTypes().keySet().stream()
+                                                .limit(10)
+                                                .map(Id::toString)
+                                                .collect(Collectors.joining(", ")));
+                            }
                             vehicle = fac.createVehicle(vehicleId,vehicleType);
                         }
 
@@ -924,31 +941,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             }
                         }
 
-                        // Log trip processing metrics
-                        long endTime = System.nanoTime();
-                        long endCpuTime = threadMXBean.getCurrentThreadCpuTime();
-                        long endMemory = runtime.totalMemory() - runtime.freeMemory();
-
-                        long durationNanos = endTime - startTime;
-                        long cpuTimeNanos = endCpuTime - startCpuTime;
-                        long memoryDelta = endMemory - startMemory;
-
-                        logger.warn(
-                                "Trip metrics - ID: {}, Day: {}, Mode: {}, StartTime: {}s, EndTime: {}s, " +
-                                "Duration: {}ms, StartMemory: {}MB, EndMemory: {}MB, MemoryDelta: {}MB, " +
-                                "StartCPU: {}ms, EndCPU: {}ms, CPUTime: {}ms",
-                                trip.getId(),
-                                day,
-                                mode,
-                                trip.getDepartureTimeInMinutes() * 60,
-                                trip.isHomeBased() ? trip.getDepartureReturnInMinutes() * 60 : "N/A",
-                                durationNanos / 1_000_000,
-                                startMemory / (1024 * 1024), endMemory / (1024 * 1024),
-                                memoryDelta / (1024 * 1024),
-                                startCpuTime / 1_000_000, endCpuTime / 1_000_000,
-                                cpuTimeNanos / 1_000_000
-                        );
-
                         int current = processedTrips.incrementAndGet();
                         if (current % logInterval == 0 || current == totalTrips) {
                             double percentage = 100.0 * current / totalTrips;
@@ -957,8 +949,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
                     logger.warn(e.getLocalizedMessage());
+                    Writer buffer = new StringWriter();
+                    PrintWriter pw = new PrintWriter(buffer);
+                    e.printStackTrace(pw);
+                    logger.warn(buffer.toString());
                     throw new RuntimeException(e);
                 }
                 return null;

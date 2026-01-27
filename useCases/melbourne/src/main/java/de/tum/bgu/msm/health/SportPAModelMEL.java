@@ -95,11 +95,11 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
             predictor += handleCoefficient(coef, "student_status");
         }
 
-        // Socio-economic disadvantage deciles
-        int zoneId = dataContainer.getRealEstateDataManager().getDwelling(person.getHousehold().getDwellingId()).getZoneId();
-        ZoneMEL zoneMEL = (ZoneMEL) dataContainer.getGeoData().getZones().get(zoneId);
-
-        predictor += zoneMEL.getSocioEconomicDisadvantageDeciles() * handleCoefficient(coef, "IRSD");
+//        // Socio-economic disadvantage deciles
+//        int zoneId = dataContainer.getRealEstateDataManager().getDwelling(person.getHousehold().getDwellingId()).getZoneId();
+//        ZoneMEL zoneMEL = (ZoneMEL) dataContainer.getGeoData().getZones().get(zoneId);
+//
+//        predictor += zoneMEL.getSocioEconomicDisadvantageDeciles() * handleCoefficient(coef, "IRSD");
 
         return predictor;
     }
