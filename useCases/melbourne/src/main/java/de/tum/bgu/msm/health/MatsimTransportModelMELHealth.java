@@ -401,10 +401,6 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         bikePedConfig.routing().removeModeRoutingParams("walk");
         bikePedConfig.routing().removeModeRoutingParams("pt");
 
-        if (properties.transportModel.includeAccessEgress) {
-            bikePedConfig.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
-        }
-
 
         // BIKE ATTRIBUTES
         List<ToDoubleFunction<Link>> bikeAttributes = new ArrayList<>();
@@ -412,10 +408,10 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         bikeAttributes.add(l -> LinkStress.getStress(l,TransportMode.bike));
 
         // Bike weights
-        Function<org.matsim.api.core.v01.population.Person,double[]> bikeWeights = p -> {
+        Function<Person,double[]> bikeWeights = p -> {
             switch((Purpose) p.getAttributes().getAttribute("purpose")) {
                 case HBW -> {
-                    if(p.getAttributes().getAttribute("sex").equals(Gender.FEMALE)) {
+                    if(p.getAttributes().getAttribute("sex").equals(MitoGender.FEMALE)) {
                         // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L130
                         return new double[] {0, 1.1705777 + 1.3119864};
                     } else {
@@ -432,7 +428,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
                         // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L149
                         return new double[] {8.7270880 + 51.9352371, 0 + 4.6070250};
                     }
-                    else if(p.getAttributes().getAttribute("sex").equals(Gender.FEMALE)) {
+                    else if(p.getAttributes().getAttribute("sex").equals(MitoGender.FEMALE)) {
                         // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L148
                         return new double[] {8.7270880 + 23.5710917, 0 + 1.7298508};
                     } else {
@@ -473,7 +469,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         walkAttributes.add(l -> Math.min(1.,((double) l.getAttributes().getAttribute("speedLimitMPH")) / 50.));
 
         // Walk weights
-        Function<org.matsim.api.core.v01.population.Person,double[]> walkWeights = p -> {
+        Function<Person,double[]> walkWeights = p -> {
             switch ((Purpose) p.getAttributes().getAttribute("purpose")) {
                 case HBW -> {
                     // https://github.com/jibeproject/matsim-jibe/blob/3d1a34d60a9a1aae5945967b728d5254ba596dd6/src/main/java/skim/RunSkimsMelbourne.java#L131
@@ -582,9 +578,7 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         config.qsim().setNumberOfThreads(16);
         config.transit().setUsingTransitInMobsim(false);
         config.routing().setRoutingRandomness(0.);
-        if (properties.transportModel.includeAccessEgress) {
-            config.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
-        }
+
         // Set scale factor
         config.qsim().setFlowCapFactor(properties.main.scaleFactor * properties.healthData.matsim_scale_factor_car);
         config.qsim().setStorageCapFactor(properties.main.scaleFactor * properties.healthData.matsim_scale_factor_car);
