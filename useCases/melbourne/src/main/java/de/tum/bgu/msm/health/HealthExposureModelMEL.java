@@ -860,7 +860,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
 
         for (final List<Trip> partition : partitions) {
-            LeastCostPathCalculator pathCalculator = new FastMultiNodeDijkstraFactory().createPathCalculator(
+            LeastCostPathCalculator pathCalculator = new SpeedyALTFactory().createPathCalculator(
                     scenario.getNetwork(), travelDisutility, travelTime
             );
             PopulationFactory factory = PopulationUtils.getFactory();
