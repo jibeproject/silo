@@ -21,9 +21,9 @@ public class MatsimNetworkLengthUpdater {
 
     public static void main(String[] args) throws Exception {
         // Use absolute paths for now (you can change to relative later if you like)
-        File matsimNetworkXml = new File("D:/projects/jibe/melbourne/input/mito/trafficAssignment/network.xml");
-        File gpkgFile         = new File("D:/projects/jibe/melbourne/input/mito/trafficAssignment/network2way.gpkg");
-        File outputNetworkXml = new File("D:/projects/jibe/melbourne/input/mito/trafficAssignment/network_updated.xml");
+        File matsimNetworkXml = new File("input/mito/trafficAssignment/network.xml");
+        File gpkgFile         = new File("input/mito/trafficAssignment/network2way.gpkg");
+        File outputNetworkXml = new File("input/mito/trafficAssignment/network_updated.xml");
 
         String layerName = "links";   // table/layer name in the GeoPackage
         String idAttr    = "linkID";  // attribute that matches MATSim link id
