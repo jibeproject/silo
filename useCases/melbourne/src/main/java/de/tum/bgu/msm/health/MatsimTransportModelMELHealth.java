@@ -23,7 +23,6 @@ import de.tum.bgu.msm.data.Day;
 import de.tum.bgu.msm.data.MitoGender;
 import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.Purpose;
-import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.data.travelTimes.TravelTimes;
 import de.tum.bgu.msm.health.data.DataContainerHealth;
@@ -63,15 +62,13 @@ import org.matsim.vehicles.Vehicle;
 import org.matsim.vehicles.VehicleType;
 import org.matsim.vehicles.VehicleUtils;
 import org.matsim.vehicles.VehiclesFactory;
+import routing.*;
 import routing.components.Gradient;
 import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
 import routing.TransportModeNetworkFilter;
-import routing.WalkConfigGroup;
-import routing.BicycleConfigGroup;
-import routing.WalkModule;
-import routing.BicycleModule;
+
 
 import java.io.File;
 import java.util.*;
@@ -267,10 +264,15 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             matsimScenario.getConfig().qsim().setVehicleBehavior(QSimConfigGroup.VehicleBehavior.teleport);
             matsimScenario.getConfig().qsim().setUsePersonIdForMissingVehicleId(true);
 
-            // Create active mode network
+            // Create active mode networkk
             Network activeNetwork = extractModeSpecificNetwork(
                     matsimScenario.getNetwork(),
-                    new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk))
+                    new HashSet<>(
+                        Arrays.asList(
+                            TransportMode.bike,
+                            TransportMode.walk
+                        )
+                    )
             );
             matsimScenario.setNetwork(activeNetwork);
 
@@ -401,6 +403,9 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         bikePedConfig.routing().removeModeRoutingParams("walk");
         bikePedConfig.routing().removeModeRoutingParams("pt");
 
+        if (properties.transportModel.includeAccessEgress) {
+            bikePedConfig.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
+        }
 
         // BIKE ATTRIBUTES
         List<ToDoubleFunction<Link>> bikeAttributes = new ArrayList<>();
@@ -578,7 +583,9 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
         config.qsim().setNumberOfThreads(16);
         config.transit().setUsingTransitInMobsim(false);
         config.routing().setRoutingRandomness(0.);
-
+        if (properties.transportModel.includeAccessEgress) {
+            config.routing().setAccessEgressType(RoutingConfigGroup.AccessEgressType.accessEgressModeToLink);
+        }
         // Set scale factor
         config.qsim().setFlowCapFactor(properties.main.scaleFactor * properties.healthData.matsim_scale_factor_car);
         config.qsim().setStorageCapFactor(properties.main.scaleFactor * properties.healthData.matsim_scale_factor_car);
