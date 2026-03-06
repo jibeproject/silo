@@ -1,6 +1,6 @@
 # SILO - Simple Integrated Land-Use Orchestrator
 
-This repository contains a JIBE-specific implementation of the Java-based [SILO](https://github.com/msmobility/silo) software for modelling travel demand.  
+This repository contains a JIBE-specific implementation of the Java-based [SILO](https://github.com/msmobility/silo) software for modelling travel demand, developed through a multi-intstitutional collaboration between researchers at the Technical University of Munich (TUM), University of Cambridge's Public Health Modelling team, and RMIT University's Centre for Urban Research.
 
 The main branch has [merged code](https://github.com/msmobility/silo/tree/transportHealthIntegrationModel_jibe) developed by Qin Zhang and Corin Staves for the JIBE project's [Manchester](https://github.com/jibeproject/silo/tree/main/useCases/manchester/src/main/java/de/tum/bgu/msm) implementation, with further health model development by Ismaïl Saadi, Ali Abbas, Tabea Sonnenschein, and Marina Berdikhanova, and implementation of the Melbourne use-case scenarios by Carl Higgs.  Project CIs are Belen Zapata-Diomedi and Prof James Woodcock.
 
@@ -13,10 +13,8 @@ Please see [the wiki](https://wiki.tum.de/display/msmmodels/MITO) for documentat
 
 ## Project Overview
 
-**Repository:** Public-Health-Modelling-Cambridge/silo  
+**Repository:** jibeproject/silo  
 **Description:** SILO Model Java Code  
-**Language Composition:** Java (85.7%), HTML (14.1%), R (0.2%)  
-**Version:** 0.1.0-SNAPSHOT  
 **License:** GNU General Public License
 
 ### What is SILO?
