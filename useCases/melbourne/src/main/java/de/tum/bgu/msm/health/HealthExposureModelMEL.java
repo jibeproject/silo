@@ -862,9 +862,11 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         for (final List<Trip> partition : partitions) {
 
-            LeastCostPathCalculator pathCalculator = new AStarLandmarksFactory(
-                    scenario.getConfig().global()).createPathCalculator(
-                            scenario.getNetwork(), travelDisutility, travelTime
+
+            LeastCostPathCalculator pathCalculator = new FastMultiNodeDijkstraFactory().createPathCalculator(
+                    scenario.getNetwork(),
+                    travelDisutility,
+                    travelTime
             );
             PopulationFactory factory = PopulationUtils.getFactory();
 
