@@ -33,6 +33,7 @@ import org.matsim.core.config.Config;
 import org.matsim.core.controler.ControlerDefaults;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.router.AStarLandmarksFactory;
 import org.matsim.core.router.FastMultiNodeDijkstraFactory;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
@@ -603,6 +604,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
         // Progress tracking variables
         final int totalTrips = trips.size();
+        if (totalTrips==0){
+            logger.info("No trips to process for mode {}, day {}", mode, day);
+            return;
+        }
         final AtomicInteger processedTrips = new AtomicInteger(0);
         final int logInterval = Math.max(1, totalTrips / 20); // Log progress about 20 times (5% intervals)
 
@@ -856,8 +861,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
 
         for (final List<Trip> partition : partitions) {
+
+
             LeastCostPathCalculator pathCalculator = new FastMultiNodeDijkstraFactory().createPathCalculator(
-                    scenario.getNetwork(), travelDisutility, travelTime
+                    scenario.getNetwork(),
+                    travelDisutility,
+                    travelTime
             );
             PopulationFactory factory = PopulationUtils.getFactory();
 

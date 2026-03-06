@@ -19,12 +19,16 @@ import org.matsim.api.core.v01.TransportMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
+
 public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListener {
     private static final Logger logger = LogManager.getLogger(DiseaseModelMEL.class);
 
     public DiseaseModelMEL(DataContainer dataContainer, Properties properties, Random random) {
         super(dataContainer, properties, random);
     }
+
+    static java.util.Properties projectProperties = getMelbourneProperties();
 
     @Override
     public void setup() {
@@ -181,7 +185,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
         }
 
         // Injuries
-        boolean activateInjuries = true; // activate injuries here
+        boolean activateInjuries = Boolean.parseBoolean(projectProperties.getProperty("activate.injuries","false")); // activate injuries here
 
         if (activateInjuries) {
             // Prepare fatalities map by mode and age (gender ??)

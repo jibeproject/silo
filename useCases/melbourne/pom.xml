@@ -125,6 +125,19 @@
             <version>5.10.3</version>
             <scope>test</scope>
         </dependency>
+        <!-- GeoTools for GeoPackage and geometry -->
+        <dependency>
+            <groupId>org.geotools</groupId>
+            <artifactId>gt-geopkg</artifactId>
+            <version>31.3</version>
+        </dependency>
+        <!-- Required JDBC driver for SQLite/GeoPackage -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.51.2.0</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 
 
