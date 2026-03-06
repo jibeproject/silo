@@ -2,6 +2,7 @@ package de.tum.bgu.msm.health;
 
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.utils.SiloUtil;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.matsim.core.config.Config;
@@ -22,8 +23,8 @@ public class RunHomeBasedExposureOffline {
     private final static Logger logger = LogManager.getLogger(RunHomeBasedExposureOffline.class);
 
     public static void main(String[] args) throws IOException {
-        logger.info("Started SILO home-based exposure offline model for Greater Melbourne");
-        logger.info("Scenario properties: " + args[0]);
+        SiloUtil.captureLog(Level.INFO, "Started SILO home-based exposure offline model for Greater Melbourne");
+        SiloUtil.captureLog(Level.INFO, "Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
 
         Config config = null;

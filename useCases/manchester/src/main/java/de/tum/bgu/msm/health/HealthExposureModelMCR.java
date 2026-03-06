@@ -8,7 +8,6 @@ import de.tum.bgu.msm.data.*;
 import de.tum.bgu.msm.data.job.JobMCR;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.person.Person;
-import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.health.data.*;
 import de.tum.bgu.msm.health.diseaseModelOffline.HealthExposuresReader;
 import de.tum.bgu.msm.health.injury.AccidentType;
@@ -23,16 +22,12 @@ import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.util.concurrent.ConcurrentExecutor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.locationtech.jts.geom.Coordinate;
-import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
-import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.api.core.v01.population.PopulationFactory;
-import org.matsim.contrib.analysis.vsp.traveltimedistance.TripsExtractor;
 import org.matsim.contrib.dvrp.trafficmonitoring.TravelTimeUtils;
 import org.matsim.contrib.emissions.Pollutant;
 import org.matsim.core.config.Config;
@@ -58,8 +53,6 @@ import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
 import routing.travelDisutility.ActiveDisutilityPrecalc;
-import routing.travelTime.BicycleLinkSpeedCalculatorImpl;
-import routing.travelTime.BicycleTravelTime;
 import routing.travelTime.WalkLinkSpeedCalculatorImpl;
 import routing.travelTime.WalkTravelTime;
 
@@ -877,8 +870,9 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                 logger.error("No travel time/disutility for mode: " + mode);
         }
 
-        //
-        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
+        // ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
+        //ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Runtime.getRuntime().availableProcessors());
+        ConcurrentExecutor<Void> executor = ConcurrentExecutor.fixedPoolService(Math.min(Runtime.getRuntime().availableProcessors(), 14));
         AtomicInteger counter = new AtomicInteger();
         logger.info("Partition Size: " + partitionSize);
         AtomicInteger NO_PATH_TRIP = new AtomicInteger();
@@ -1560,21 +1554,21 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
         switch (mode) {
             case "car":
                 linkInjuryRisk =
-                        getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.CAR_ONEWAY, time) +
-                                getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.CAR_TWOWAY, time);
                 break;
             case "bike":
                 linkInjuryRisk =
-                        getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.BIKE_MAJOR, time) +
-                                getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.BIKE_MINOR, time);
                 break;
             case "walk":
                 linkInjuryRisk =
-                        getRiskValue2(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue2(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.PED, time);
                 break;
             default:
@@ -1589,21 +1583,21 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
             case autoDriver:
             case autoPassenger:
                 linkInjuryRisk =
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.CAR_ONEWAY, time) +
-                                getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.CAR_TWOWAY, time);
                 break;
             case bicycle:
                 linkInjuryRisk =
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.BIKE_MAJOR, time) +
-                                getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                                getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                         AccidentType.BIKE_MINOR, time);
                 break;
             case walk:
                 linkInjuryRisk =
-                        getRiskValue(linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime(),
+                        getRiskValue(linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime(),
                                 AccidentType.PED, time);
                 break;
             default:
@@ -1638,7 +1632,7 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
 
         double severeInjuryRisk;
         double fatalityRisk;
-        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualityExposureByAccidentTypeByTime();
+        Map<AccidentType, OpenIntFloatHashMap> exposure = linkInfo.getSevereFatalCasualtyExposureByAccidentTypeByTime();
 
         switch (mode){
             case autoPassenger:

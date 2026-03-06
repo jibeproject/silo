@@ -5,6 +5,7 @@ import de.tum.bgu.msm.health.noise.NoiseModel;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.resources.Resources;
 import de.tum.bgu.msm.utils.SiloUtil;
+import org.apache.logging.log4j.Level;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.apache.logging.log4j.LogManager;
@@ -15,7 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 /**
- * Implements SILO for the Greater Melbourne
+ * Implements SILO for Greater Melbourne
  *
  * @author Qin Zhang
  * @author Carl Higgs
@@ -27,8 +28,8 @@ public class RunExposureHealthOffline {
     private final static Logger logger = LogManager.getLogger(RunExposureHealthOffline.class);
 
     public static void main(String[] args) throws IOException {
-        logger.info("Started SILO offline health exposure model for Greater Melbourne");
-        logger.info("Scenario properties: " + args[0]);
+        SiloUtil.captureLog(Level.INFO, "Started SILO offline health exposure model for Greater Melbourne");
+        SiloUtil.captureLog(Level.INFO, "Scenario properties: " + args[0]);
         Properties properties = SiloUtil.siloInitialization(args[0]);
 
         Resources.initializeResources(properties.transportModel.mitoPropertiesPath);

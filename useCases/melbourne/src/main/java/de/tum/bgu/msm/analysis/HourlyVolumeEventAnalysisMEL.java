@@ -13,8 +13,11 @@ import org.matsim.vehicles.Vehicles;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.Properties;
 
 public class HourlyVolumeEventAnalysisMEL {
     /*
@@ -23,12 +26,30 @@ public class HourlyVolumeEventAnalysisMEL {
     Generalised for Melbourne use case.
     */
     private static final String MATSIM_NETWORK = "input/mito/trafficAssignment/network.xml";
-    private static final String SCENARIO_NAME = "base";
+    private static final String SCENARIO_NAME_PROPERTY = "scenario.name";
     private static final String YEAR = "2018";
     private static final int SCALE_FACTOR_ACTIVE = 1;
     private static final int SCALE_FACTOR_CAR = 10;
-    private static final String SCENARIO_PATH = String.format("scenOutput/%s/matsim/%s", SCENARIO_NAME, YEAR);
     private static final Logger logger = LogManager.getLogger(HourlyVolumeEventAnalysisMEL.class);
+
+
+    private static String loadScenarioName(String propertiesFilePath) {
+        Properties properties = new Properties();
+
+        try (FileInputStream fis = new FileInputStream(propertiesFilePath)) {
+            properties.load(fis);
+            String scenarioName = properties.getProperty(SCENARIO_NAME_PROPERTY);
+
+            if (scenarioName == null || scenarioName.trim().isEmpty()) {
+                throw new IllegalArgumentException("Property '" + SCENARIO_NAME_PROPERTY + "' not found or empty in properties file");
+            }
+
+            return scenarioName.trim();
+
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load properties file: " + propertiesFilePath, e);
+        }
+    }
 
     private static void writeHourlyVolumes(Network network, HourlyVolumeEventHandler handler, String outputPath, String header, int scaleFactor, String[] volumeTypes) {
         try (PrintWriter pw = new PrintWriter(outputPath)) {
@@ -81,6 +102,15 @@ public class HourlyVolumeEventAnalysisMEL {
     }
 
     public static void main(String[] args) {
+        if (args.length == 0) {
+            throw new IllegalArgumentException("Properties file path must be provided as first argument");
+        }
+
+        String scenarioName = loadScenarioName(args[0]);
+        String scenarioPath = String.format("scenOutput/%s/matsim/%s", scenarioName, YEAR);
+
+        logger.info("Running hourly volume analysis for scenario: {}", scenarioName);
+
         String[] days = {"thursday", "saturday", "sunday"};
         Network network = NetworkUtils.createNetwork();
         new MatsimNetworkReader(network).readFile(MATSIM_NETWORK);
@@ -91,9 +121,9 @@ public class HourlyVolumeEventAnalysisMEL {
                 new ModeCategory("car", new String[]{"car", "truck"}, SCALE_FACTOR_CAR, "linkId,edgeId,osmId,hour,car,truck", day)
             };
             for (ModeCategory mode : modes) {
-                String eventPath = String.format("%s/%s/%s/%s.output_events.xml.gz", SCENARIO_PATH, day, mode.subfolder, YEAR);
-                String vehiclesPath = String.format("%s/%s/%s/%s.output_vehicles.xml.gz", SCENARIO_PATH, day, mode.subfolder, YEAR);
-                String outputPath = String.format("%s/hourlyVolume_%s", SCENARIO_PATH, mode.outputSuffix);
+                String eventPath = String.format("%s/%s/%s/%s.output_events.xml.gz", scenarioPath, day, mode.subfolder, YEAR);
+                String vehiclesPath = String.format("%s/%s/%s/%s.output_vehicles.xml.gz", scenarioPath, day, mode.subfolder, YEAR);
+                String outputPath = String.format("%s/hourlyVolume_%s", scenarioPath, mode.outputSuffix);
 
                 Vehicles vehicles = VehicleUtils.createVehiclesContainer();
                 new MatsimVehicleReader(vehicles).readFile(vehiclesPath);
