@@ -36,7 +36,9 @@ public class SportPAModelMCR extends AbstractModel implements ModelUpdateListene
     @Override
     public void endYear(int year) {
         logger.warn("Sport Physical Activity end year:" + year);
-        updateSportPA();
+        if(properties.healthData.exposureModelYears.contains(year)){
+            updateSportPA();
+        }
     }
 
     @Override
@@ -102,7 +104,7 @@ public class SportPAModelMCR extends AbstractModel implements ModelUpdateListene
         int zoneId = dataContainer.getRealEstateDataManager().getDwelling(person.getHousehold().getDwellingId()).getZoneId();
         ZoneMCR zoneMCR = (ZoneMCR) dataContainer.getGeoData().getZones().get(zoneId);
 
-        predictor += zoneMCR.getImd10() * coef.get("imd10");
+        //predictor += zoneMCR.getImd10() * coef.get("imd10");
 
         return predictor;
     }
