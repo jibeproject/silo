@@ -136,9 +136,11 @@ public class ModelBuilderLongitudinalMEL {
 
         //modelContainer.registerModelUpdateListener(new UpdateCarOwnershipModelMuc(dataContainer, properties, SiloUtil.provideNewRandom()));
 
-        modelContainer.registerModelUpdateListener(new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
+        modelContainer.registerModelUpdateListener(new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
 
         modelContainer.registerModelUpdateListener(new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config));
+
+        modelContainer.registerModelUpdateListener(new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
 
         modelContainer.registerModelUpdateListener(new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
 
