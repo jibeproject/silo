@@ -13,7 +13,7 @@ public class LinkInfo {
 
     private final Id<Link> linkId;
 
-    private  Map<AccidentType, OpenIntFloatHashMap> severeFatalCasualtyExposureByAccidentTypeByTime = new HashMap<>();
+    private  Map<AccidentType, OpenIntFloatHashMap> severeFatalCasualityExposureByAccidentTypeByTime = new HashMap<>();
 
     private Map<Pollutant, OpenIntFloatHashMap> exposure2Pollutant2TimeBin = new HashMap<>();
 
@@ -29,12 +29,12 @@ public class LinkInfo {
         return linkId;
     }
 
-    public Map<AccidentType, OpenIntFloatHashMap> getSevereFatalCasualtyExposureByAccidentTypeByTime() {
-        return severeFatalCasualtyExposureByAccidentTypeByTime;
+    public Map<AccidentType, OpenIntFloatHashMap> getSevereFatalCasualityExposureByAccidentTypeByTime() {
+        return severeFatalCasualityExposureByAccidentTypeByTime;
     }
 
-    public void setSevereFatalCasualtyExposureByAccidentTypeByTime(Map<AccidentType, OpenIntFloatHashMap> severeFatalCasualtyExposureByAccidentTypeByTime) {
-        this.severeFatalCasualtyExposureByAccidentTypeByTime = severeFatalCasualtyExposureByAccidentTypeByTime;
+    public void setSevereFatalCasualityExposureByAccidentTypeByTime(Map<AccidentType, OpenIntFloatHashMap> severeFatalCasualityExposureByAccidentTypeByTime) {
+        this.severeFatalCasualityExposureByAccidentTypeByTime = severeFatalCasualityExposureByAccidentTypeByTime;
     }
 
     public Map<Pollutant, OpenIntFloatHashMap> getExposure2Pollutant2TimeBin() {
@@ -62,7 +62,7 @@ public class LinkInfo {
     }
 
     public void reset(){
-        severeFatalCasualtyExposureByAccidentTypeByTime.clear();
+        severeFatalCasualityExposureByAccidentTypeByTime.clear();
         exposure2Pollutant2TimeBin.clear();
         noiseLevel2TimeBin.clear();
     }
