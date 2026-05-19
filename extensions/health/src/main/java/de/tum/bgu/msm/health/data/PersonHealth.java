@@ -55,15 +55,27 @@ public interface PersonHealth extends Person {
 
     float getWeeklyGreenExposuresNormalised();
 
-    void updateWeeklyTravelActivityHourOccupied(float[] hourOccupied);
-
     void setWeeklyGreenExposuresNormalised(float greenExposureNormalised);
 
+    void updateWeeklyTravelActivityHourOccupied(float[] hourOccupied);
+
     float[] getWeeklyTravelActivityHourOccupied();
+
+    float[] getWeeklyHourOccupiedByRail();
+
+    void updateWeeklyHourOccupiedByRail(float[] hourOccupied);
+
+    float[] getWeeklyHourOccupiedByTransit();
+
+    void updateWeeklyHourOccupiedByTransit(float[] hourOccupied);
 
     float getAllCauseRR();
 
     float getRelativeRiskByType(String type);
+
+    EnumMap<Diseases, Float> getRandomNumByDisease();
+
+    EnumMap<Diseases, Float> getLastYearSurvivalRateByDisease();
 
     EnumMap<HealthExposures, EnumMap<Diseases, Float>> getRelativeRisksByDisease();
 

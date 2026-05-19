@@ -20,24 +20,26 @@ import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
+import org.matsim.core.scenario.MutableScenario;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import de.tum.bgu.msm.health.injury.AccidentModel;
 
+import java.io.IOException;
 import java.util.*;
 
 /**
- * Implements SILO for the Greater Manchester
+ * Analyze AP model outputs
  *
- * @author Qin Zhang*/
+ * @author Ismail Saadi*/
 
 
-public class RunExposureHealthOffline {
+public class RunAirPollutantModel {
 
-    private final static Logger logger = LogManager.getLogger(RunExposureHealthOffline.class);
+    private final static Logger logger = LogManager.getLogger(RunAirPollutantModel.class);
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
 
         Properties properties = SiloUtil.siloInitialization(args[0]);
 
@@ -49,27 +51,17 @@ public class RunExposureHealthOffline {
             config = ConfigUtils.loadConfig(args[1]);
         }
         logger.info("Started SILO land use model for the Greater Manchester");
-        HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForManchester(properties, config);
+        HealthDataContainerImpl dataContainer = DataBuilderHealth.getModelDataForMelbourne(properties, config);
         DataBuilderHealth.read(properties, dataContainer, config);
 
-        // setup
-        AccidentModelMCR accidentModel = new AccidentModelMCR(dataContainer, properties, SiloUtil.provideNewRandom());
-        HealthExposureModelMCR exposureModelMCR = new HealthExposureModelMCR(dataContainer, properties, SiloUtil.provideNewRandom(),config);
-        SportPAModelMCR sportPAModelMCR = new SportPAModelMCR(dataContainer, properties, SiloUtil.provideNewRandom());
-        DiseaseModelMCR diseaseModelMCR = new DiseaseModelMCR(dataContainer, properties, SiloUtil.provideNewRandom());
+        // AP
+        AirPollutantModel airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
+        airPollutantModel.endYear(2021);
 
-        // disease model only
-        // exposureModelMCR.setup();
+        // Noise
+        //NoiseModel noiseModel = new NoiseModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
+        //noiseModel.endYear(2021);
 
-        // runs
-        accidentModel.endYear(2021);
-        //exposureModelMCR.setup(); // read-in the exposure file
-        exposureModelMCR.endYear(2021);
-        sportPAModelMCR.endYear(2021);
-        diseaseModelMCR.setup();
-        diseaseModelMCR.endYear(2021);
-        dataContainer.endSimulation();
-
-        logger.info("Finished SILO.");
+        logger.info("Finished analysis.");
     }
 }
