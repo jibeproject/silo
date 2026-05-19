@@ -32,7 +32,7 @@ public class HealthModelProperties {
     public final Boolean adjustByRelativeRisk;
     public final String baseExposureFile;
     public final List<Integer> exposureModelYears;
-//    public final String bus_network;
+    public final String bus_network;
     public final String noiseBarriersFile;
     public final String sportPAmodel;
     public final String busLinkConcentration;
@@ -44,6 +44,7 @@ public class HealthModelProperties {
     public final String ptBusTimeShareMatrix;
     public final double DEFAULT_ROAD_TRAFFIC_INCREMENTAL_PM25;
     public final double DEFAULT_ROAD_TRAFFIC_INCREMENTAL_NO2;
+    public String healthSurveyData;
 
 
     public HealthModelProperties(ResourceBundle bundle) {
@@ -81,13 +82,15 @@ public class HealthModelProperties {
 
         avgSpeedFile = PropertiesUtil.getStringProperty(bundle, "avg.speed.file", "input/maxSpeeds.csv");
 
-        prevalenceDataFile = PropertiesUtil.getStringProperty(bundle, "prev.data.file", "input/health/pp_base_prevalence.csv");
+        prevalenceDataFile = PropertiesUtil.getStringProperty(bundle, "prev.data.file", "input/health/base_prevalence_id_clean_230725.csv");
 
         healthInjuryRRDataFile = PropertiesUtil.getStringProperty(bundle, "injury.rr.data.file", "input/accident/age_gender_rr.csv");
 
         carShareInjuryDataFile = PropertiesUtil.getStringProperty(bundle, "car.share.injury.data.file", "input/accident/age_gender_driver_prob_base.csv");
 
-        healthTransitionData = PropertiesUtil.getStringProperty(bundle, "health.transition.data", "input/health/health_transitions.csv");
+        healthTransitionData = PropertiesUtil.getStringProperty(bundle, "health.transition.data", "input/health/health_transitions_manchester.csv");
+
+        healthSurveyData = PropertiesUtil.getStringProperty(bundle, "health.survey.data", "input/health/HSE/processed_hse.csv");
 
         adjustByRelativeRisk = PropertiesUtil.getBooleanProperty(bundle, "adjust.transition.byRelativeRisk", false);
 
@@ -95,9 +98,9 @@ public class HealthModelProperties {
 
         exposureModelYears = Arrays.stream((PropertiesUtil.getIntPropertyArray(bundle, "exposure.model.years", new int[]{-1}))).boxed().collect(Collectors.toList());
 
-//        bus_network = PropertiesUtil.getStringProperty(bundle, "matsim.network.bus", "input/mito/trafficAssignment/network_transit_hbefa.xml");
+        bus_network = PropertiesUtil.getStringProperty(bundle, "matsim.network.bus", "input/mito/trafficAssignment/network_transit_hbefa.xml");
 
-        noiseBarriersFile = PropertiesUtil.getStringProperty(bundle, "noise.barriers.file", "input/buildingShapefile/buildings.geojson");
+        noiseBarriersFile = PropertiesUtil.getStringProperty(bundle, "noise.barriers.file", "input/buildingShapefile/mrcBuildings.geojson");
 
         sportPAmodel = PropertiesUtil.getStringProperty(bundle, "sportPA.model", "input/health/sportPAmodel.csv");
 

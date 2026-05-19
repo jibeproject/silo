@@ -9,13 +9,16 @@ import de.tum.bgu.msm.data.person.PersonRole;
 import de.tum.bgu.msm.events.impls.person.DeathEvent;
 import de.tum.bgu.msm.health.data.DataContainerHealth;
 import de.tum.bgu.msm.health.data.PersonHealth;
+import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.models.AbstractModel;
 import de.tum.bgu.msm.models.demography.death.DeathModel;
 import de.tum.bgu.msm.models.demography.death.DeathStrategy;
 import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.utils.SiloUtil;
 
+import java.io.IOException;
 import java.util.*;
+import java.util.logging.*;
 
 /**
  * @author Greg Erhardt, Rolf Moeckel
@@ -24,6 +27,7 @@ import java.util.*;
  */
 public class DeathModelMCR extends AbstractModel implements DeathModel {
 
+    private static int year = 0;
     private final DeathStrategy strategy;
     //private final Random random;
 
@@ -35,6 +39,7 @@ public class DeathModelMCR extends AbstractModel implements DeathModel {
 
     @Override
     public Collection<DeathEvent> getEventsForCurrentYear(int year) {
+        this.year = year;
         final List<DeathEvent> events = new ArrayList<>();
         for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
             events.add(new DeathEvent(person.getId()));
@@ -48,10 +53,19 @@ public class DeathModelMCR extends AbstractModel implements DeathModel {
         // simulate if person with ID perId dies in this simulation period
         HouseholdDataManager householdDataManager = dataContainer.getHouseholdDataManager();
         final Person person = householdDataManager.getPersonFromId(event.getPersonId());
+
+
         if (person != null) {
-            if (random.nextDouble() < strategy.calculateDeathProbability(person)) {
+            //For model stability: one random number per person per disease. use survival equation
+            float rand = ((PersonHealth) person).getRandomNumByDisease().get(Diseases.all_cause_mortality);
+            double deathProb = strategy.calculateDeathProbability(person, random);
+            float thisYearSurvivalRate = (float) ((1 - deathProb) * ((PersonHealth) person).getLastYearSurvivalRateByDisease().get(Diseases.all_cause_mortality));
+
+            if (rand > thisYearSurvivalRate) {
                 return die(person);
             }
+
+            ((PersonHealth) person).getLastYearSurvivalRateByDisease().put(Diseases.all_cause_mortality, thisYearSurvivalRate);
         }
         return false;
     }
