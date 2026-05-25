@@ -8,6 +8,7 @@ import de.tum.bgu.msm.data.*;
 import de.tum.bgu.msm.data.job.JobMCR;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.person.Person;
+import de.tum.bgu.msm.data.travelTimes.SkimTravelTimes;
 import de.tum.bgu.msm.health.data.*;
 import de.tum.bgu.msm.health.diseaseModelOffline.HealthExposuresReader;
 import de.tum.bgu.msm.health.injury.AccidentType;
@@ -22,12 +23,16 @@ import de.tum.bgu.msm.properties.Properties;
 import de.tum.bgu.msm.util.concurrent.ConcurrentExecutor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.locationtech.jts.geom.Coordinate;
+import org.matsim.api.core.v01.Coord;
 import org.matsim.api.core.v01.Id;
+import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.network.Node;
 import org.matsim.api.core.v01.population.PopulationFactory;
+import org.matsim.contrib.analysis.vsp.traveltimedistance.TripsExtractor;
 import org.matsim.contrib.dvrp.trafficmonitoring.TravelTimeUtils;
 import org.matsim.contrib.emissions.Pollutant;
 import org.matsim.core.config.Config;
@@ -53,6 +58,8 @@ import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
 import routing.travelDisutility.ActiveDisutilityPrecalc;
+import routing.travelTime.BicycleLinkSpeedCalculatorImpl;
+import routing.travelTime.BicycleTravelTime;
 import routing.travelTime.WalkLinkSpeedCalculatorImpl;
 import routing.travelTime.WalkTravelTime;
 
@@ -1522,16 +1529,27 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
                     min_ventilation_rate = 0.61;
                 }
 
-                sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/actualHourForAirExposure/min_ventilation_rate;
-                sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/actualHourForAirExposure/min_ventilation_rate;
+                if (actualHourForAirExposure > 0) {
+                    sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/actualHourForAirExposure/min_ventilation_rate;
+                    sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/actualHourForAirExposure/min_ventilation_rate;
+                }
 
+                if (actualHourForNoiseExposure > 0) {
+                    float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]/actualHourForNoiseExposure));
+                    sumExposureNoise += hourlyNoiseLevel;
 
-                float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]/actualHourForNoiseExposure));
-                sumExposureNoise += hourlyNoiseLevel;
+                    if (dayHour <= 7  || dayHour > 23 ){
+                        sumActualHourForNoiseExposureNight += actualHourForNoiseExposure;
+                        sumExposureNoiseNight += hourlyNoiseLevel;
+                    }
+                }
 
-                if (dayHour <= 7  || dayHour > 23 ){
-                    sumActualHourForNoiseExposureNight += actualHourForNoiseExposure;
-                    sumExposureNoiseNight += hourlyNoiseLevel;
+                if (actualHourForNoiseExposure < 0) {
+                    logger.warn("Person id: " + person.getId() + "has negative hour for noise exposure at hour: " + weekHour);
+                }
+
+                if (actualHourForAirExposure < 0) {
+                    logger.warn("Person id: " + person.getId() + "has negative hour for air exposure at hour: " + weekHour);
                 }
             }
 
