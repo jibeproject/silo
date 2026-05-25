@@ -886,7 +886,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         if(mode.equals(Mode.walk)||mode.equals(Mode.bicycle)) {
                             Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
                             MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
-                            int age = siloPerson.getAge();
+                            int age = Math.min(siloPerson.getAge(), 100);
 
                             person = factory.createPerson(Id.createPersonId(trip.getId()));
                             person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
