@@ -362,7 +362,28 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
     @Override
     public void updateWeeklyTravelActivityHourOccupied(float[] hourOccupied) {
         for(int i=0; i<hourOccupied.length; i++) {
-            this.weeklyTravelActivityHourOccupied[i] += hourOccupied[i];
+            float newValue = this.weeklyTravelActivityHourOccupied[i] + hourOccupied[i];
+            
+            if (newValue > 1.0f) {
+                int day = i / 24;
+                int hour = i % 24;
+                String[] dayNames = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+                String dayName = day < 7 ? dayNames[day] : "Day" + day;
+                
+                throw new IllegalStateException(
+                    String.format("Person %d: Hour %d (%s %02d:00) would be over-occupied: %.4f + %.4f = %.4f (max: 1.0). " +
+                        "This indicates overlapping trips/activities. Check trip scheduling logic.", 
+                        this.getId(), i, dayName, hour, 
+                        this.weeklyTravelActivityHourOccupied[i], hourOccupied[i], newValue));
+            }
+            
+            if (newValue < 0.0f) {
+                throw new IllegalStateException(
+                    String.format("Person %d: hourOccupied[%d] would become negative: %.4f (logic error)", 
+                        this.getId(), i, newValue));
+            }
+            
+            this.weeklyTravelActivityHourOccupied[i] = newValue;
         }
     }
 
@@ -375,18 +396,22 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
         this.relativeRisksByDisease = relativeRisksByDisease;
     }
 
+    @Override
     public Map<Diseases, Float> getCurrentDiseaseProb() {
         return currentDiseaseProb;
     }
 
+    @Override
     public List<Diseases> getCurrentDisease() {
         return currentDisease;
     }
 
+    @Override
     public Map<Integer, List<String>> getHealthDiseaseTracker() {
         return healthDiseaseTracker;
     }
 
+    @Override
     public void resetHealthData(){
         weeklyTravelSeconds = 0.f;
         weeklyActivityMinutes = 0.f;
@@ -445,11 +470,12 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
         return 0;
     }
 
-
+    @Override
     public EnumMap<Diseases, Float> getRandomNumByDisease() {
         return randomNumByDisease;
     }
 
+    @Override
     public EnumMap<Diseases, Float> getLastYearSurvivalRateByDisease() {
         return lastYearSurvivalRateByDisease;
     }
