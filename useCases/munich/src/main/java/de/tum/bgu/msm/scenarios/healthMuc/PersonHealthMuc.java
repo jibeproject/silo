@@ -239,6 +239,7 @@ public class PersonHealthMuc implements PersonWithSchool, PersonHealth {
 
     @Override
     public void updateWeeklyAccidentRisks(Map<String, Double> newRisks) {
+        //newRisks.forEach((k, v) -> weeklyAccidentRisks.merge(k, v, (v1, v2) -> v1 + v2 - v1*v2));
         newRisks.forEach((k, v) -> weeklyAccidentRisks.merge(k, v, (v1, v2) -> v1 + v2));
     }
 
@@ -288,6 +289,25 @@ public class PersonHealthMuc implements PersonWithSchool, PersonHealth {
     }
 
     @Override
+    public float[] getWeeklyHourOccupiedByRail() {
+        return new float[0];
+    }
+
+    @Override
+    public void updateWeeklyHourOccupiedByRail(float[] hourOccupied) {
+
+    }
+
+    @Override
+    public float[] getWeeklyHourOccupiedByTransit() {
+        return new float[0];
+    }
+
+    @Override
+    public void updateWeeklyHourOccupiedByTransit(float[] hourOccupied) {
+
+    }
+
     public void updateWeeklyPollutionExposures(Map<String, Float> newExposures) {
         newExposures.forEach((k, v) -> weeklyExposureByPollutant.merge(k, v, Float::sum));
     }
@@ -298,6 +318,16 @@ public class PersonHealthMuc implements PersonWithSchool, PersonHealth {
 
     public float getRelativeRiskByType(String type) {
         return relativeRisks.get(type);
+    }
+
+    @Override
+    public EnumMap<Diseases, Float> getRandomNumByDisease() {
+        return null;
+    }
+
+    @Override
+    public EnumMap<Diseases, Float> getLastYearSurvivalRateByDisease() {
+        return null;
     }
 
     public void setRelativeRisks(Map<String, Float> relativeRisks) {

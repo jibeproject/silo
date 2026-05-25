@@ -8,6 +8,7 @@ import de.tum.bgu.msm.health.data.PersonHealth;
 import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.disease.HealthExposures;
 import de.tum.bgu.msm.schools.PersonWithSchool;
+import de.tum.bgu.msm.utils.SiloUtil;
 
 import java.util.*;
 
@@ -24,6 +25,8 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
     private float weeklyActivityMinutes = 0.f;
     private float weeklyHomeMinutes = 0.f;
     private float[] weeklyTravelActivityHourOccupied = new float[24*7];
+    private float[] weeklyHourOccupiedByRail = new float[24*7];
+    private float[] weeklyHourOccupiedByTransit = new float[24*7];
 
     //for exposure model
     private Map<Mode, Float> weeklyMarginalMetHours = new HashMap<>();
@@ -42,6 +45,8 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
 
 
     //for disease model
+    private EnumMap<Diseases, Float> randomNumByDisease = new EnumMap<>(Diseases.class);
+    private EnumMap<Diseases, Float> lastYearSurvivalRateByDisease = new EnumMap<>(Diseases.class);
     private EnumMap<HealthExposures, EnumMap<Diseases, Float>> relativeRisksByDisease = new EnumMap<>(HealthExposures.class);
     private Map<Integer, List<String>> healthDiseaseTracker = new HashMap<>();
     private List<Diseases> currentDisease = new ArrayList<>();
@@ -55,6 +60,15 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
                            PersonRole role, int jobId,
                            int income)  {
         delegate = new PersonImpl(id, age, gender, occupation, role, jobId, income);
+        //initialize random number for diseases
+        for (Diseases diseases : Diseases.values()){
+            randomNumByDisease.put(diseases, SiloUtil.getRandomObject().nextFloat());
+        }
+
+        //initialize survival rate for diseases
+        for (Diseases diseases : Diseases.values()){
+            lastYearSurvivalRateByDisease.put(diseases, 1.f);
+        }
     }
 
     @Override
@@ -322,9 +336,33 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
     }
 
     @Override
-    public void updateWeeklyTravelActivityHourOccupied(float[] travelActivityHourOccupied) {
-        for(int i=0; i<travelActivityHourOccupied.length; i++) {
-            this.weeklyTravelActivityHourOccupied[i] += travelActivityHourOccupied[i];
+    public float[] getWeeklyHourOccupiedByRail() {
+        return weeklyHourOccupiedByRail;
+    }
+
+    @Override
+    public void updateWeeklyHourOccupiedByRail(float[] hourOccupied) {
+        for(int i=0; i<hourOccupied.length; i++) {
+            this.weeklyHourOccupiedByRail[i] += hourOccupied[i];
+        }
+    }
+
+    @Override
+    public float[] getWeeklyHourOccupiedByTransit() {
+        return weeklyHourOccupiedByTransit;
+    }
+
+    @Override
+    public void updateWeeklyHourOccupiedByTransit(float[] hourOccupied) {
+        for(int i=0; i<hourOccupied.length; i++) {
+            this.weeklyHourOccupiedByTransit[i] += hourOccupied[i];
+        }
+    }
+
+    @Override
+    public void updateWeeklyTravelActivityHourOccupied(float[] hourOccupied) {
+        for(int i=0; i<hourOccupied.length; i++) {
+            this.weeklyTravelActivityHourOccupied[i] += hourOccupied[i];
         }
     }
 
@@ -358,6 +396,8 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
         Arrays.fill(weeklyNoiseExposureByHour,0.f);
         weeklyNdviExposure = 0.f;
         Arrays.fill(weeklyTravelActivityHourOccupied,0.f);
+        Arrays.fill(weeklyHourOccupiedByRail,0.f);
+        Arrays.fill(weeklyHourOccupiedByTransit,0.f);
     }
 
     public float getNoiseHighAnnoyedPercentage() {
@@ -406,5 +446,11 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
     }
 
 
+    public EnumMap<Diseases, Float> getRandomNumByDisease() {
+        return randomNumByDisease;
+    }
 
+    public EnumMap<Diseases, Float> getLastYearSurvivalRateByDisease() {
+        return lastYearSurvivalRateByDisease;
+    }
 }

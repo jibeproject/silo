@@ -14,9 +14,10 @@ import de.tum.bgu.msm.models.ModelUpdateListener;
 import de.tum.bgu.msm.properties.Properties;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.matsim.api.core.v01.TransportMode;
 
+import java.io.IOException;
 import java.util.*;
+import java.util.logging.*;
 import java.util.stream.Collectors;
 
 import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
@@ -142,8 +143,14 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                 //the age cap should be 100 for all diseases and all-cause-mortality
                 double sickRate = ((DataContainerHealth) dataContainer).getHealthTransitionData().get(diseases).get(compositeKey);
 
+                /*if (diseases.equals(Diseases.depression) & sickRate > 0.05) {
+                    sickRate = 0.05;
+                }*/
+
                 // Effects of exposures
                 double sickProb = 0;
+
+                // Cleaner code - optimised by Ismail
                 if (adjustByRelativeRisk) {
                     boolean hasDementia = ((PersonHealth) person).getCurrentDisease().contains(Diseases.all_cause_dementia);
 
@@ -178,6 +185,8 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                     }
                 }
 
+
+
                 //
                 sickProb = 1 - Math.exp(-sickRate);
                 ((PersonHealth) person).getCurrentDiseaseProb().put(diseases, (float) sickProb);
@@ -185,13 +194,13 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
         }
 
         // Injuries
-        boolean activateInjuries = Boolean.parseBoolean(projectProperties.getProperty("activate.injuries","false")); // activate injuries here
+        boolean activateInjuries = true; // activate injuries here
 
-        if (activateInjuries) {
+        if(activateInjuries){
             // Prepare fatalities map by mode and age (gender ??)
             Map<String, Map<String, Double>> FatalityProbabilities = createProbabilityMap();
             CalibrationFactors calibrationFactors = new CalibrationFactors();
-            Map<String, EnumMap<Gender, Map<String, InjuryRRTableReader.DataEntry>>> injuryData = ((HealthDataContainerImpl) dataContainer).getHealthInjuryRRdata();
+            Map<String, EnumMap<Gender, Map<String, InjuryRRTableReader. DataEntry>>> injuryData = ((HealthDataContainerImpl) dataContainer).getHealthInjuryRRdata();
 
             // Set up the injury sampler and process the injured people
             InjurySampler injSampler = new InjurySampler(properties, calibrationFactors, injuryData, random);
@@ -208,7 +217,6 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
             injSampler.processInjuries2(dataContainer);
         }
     }
-
     private void initializeHealthDiseaseStates() {
         Map<Integer, List<Diseases>> prevData = ((HealthDataContainerImpl) dataContainer).getPrevalenceData();
         for (Person person : dataContainer.getHouseholdDataManager().getPersons()) {
@@ -237,17 +245,27 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                     continue;
                 }
 
+                //if(diseases.equals(Diseases.killed_bike) || diseases.equals(Diseases.killed_walk) || diseases.equals(Diseases.killed_car)){
+                //    continue;
+                //}
+
+                // diseases.equals(Diseases.severely_injured_car) || diseases.equals(Diseases.severely_injured_walk) || diseases.equals(Diseases.severely_injured_bike) ||
+
                 if (personHealth.getCurrentDiseaseProb().get(diseases) == null) {
                     continue;
                 }
 
-                //TODO: control random number? survival equation
-                if (random.nextDouble() < (personHealth.getCurrentDiseaseProb().get(diseases))) {
+                //For model stability: one random number per person per disease. use survival equation
+                float rand = personHealth.getRandomNumByDisease().get(diseases);
+                float thisYearSurvivalRate = (1 - personHealth.getCurrentDiseaseProb().get(diseases)) * personHealth.getLastYearSurvivalRateByDisease().get(diseases);
+                if (rand > thisYearSurvivalRate) {
                     if (!personHealth.getCurrentDisease().contains(diseases)) {
                         personHealth.getCurrentDisease().add(diseases);
                         newDisease.add(diseases.toString());
                     }
                 }
+
+                personHealth.getLastYearSurvivalRateByDisease().put(diseases, thisYearSurvivalRate);
             }
 
             // Set remission in terms of years - this is year_remission -1, so with 2, the remission_year is 1 year
@@ -291,6 +309,7 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                     personHealth.getHealthDiseaseTracker().put(year, personHealth.getHealthDiseaseTracker().get(year - 1));
                 }
             } else {
+
                 List<String> fullDisease = new ArrayList<>();
 
                 // DO NOT add previous states when a person has died in the injury model. These states are exclusive.
@@ -300,7 +319,8 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
                                 newDisease.contains(Diseases.dead_car.toString())) &&
                         !(((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_bike) ||
                                 ((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_walk) ||
-                                ((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_car))) {
+                                ((PersonHealth) person).getCurrentDisease().contains(Diseases.dead_car)))
+                {
                     fullDisease.addAll(personHealth.getHealthDiseaseTracker().get(year - 1)); // get old diseases
                 }
 
@@ -340,4 +360,26 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
 
         return fatalityProbabilities;
     }
+
+    /*
+    public String getAgeGroup(int age) {
+        if (age < 18) return "<18";
+        else if (age <= 65) return "18-65";
+        else return "65+";
+    }
+
+    private void processInjuryRisk(Person person, String probabilityKey, Diseases fatalDisease, Diseases injuryDisease, Map<String, Map<String, Double>> FatalityTable) {
+        PersonHealth personHealth = (PersonHealth) person;
+
+        double pFatal = FatalityTable.get(probabilityKey).get(getAgeGroup(person.getAge()));
+
+        if (random.nextDouble() < pFatal) {
+            personHealth.getCurrentDiseaseProb().put(fatalDisease, 1.0f);
+            personHealth.getCurrentDiseaseProb().put(injuryDisease, 0.0f);
+        } else {
+            personHealth.getCurrentDiseaseProb().put(fatalDisease, 0.0f);
+            personHealth.getCurrentDiseaseProb().put(injuryDisease, 1.0f);
+        }
+    }
+     */
 }

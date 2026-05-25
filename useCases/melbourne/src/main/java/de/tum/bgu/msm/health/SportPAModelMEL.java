@@ -1,6 +1,7 @@
 package de.tum.bgu.msm.health;
 
 import de.tum.bgu.msm.container.DataContainer;
+import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.ZoneMEL;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.person.Occupation;
@@ -35,7 +36,7 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
     @Override
     public void endYear(int year) {
         logger.warn("Sport Physical Activity end year:" + year);
-        if(properties.healthData.exposureModelYears.contains(year)){
+        if((properties.healthData.baseExposureFile == null && year == properties.main.startYear) || properties.healthData.exposureModelYears.contains(year)) {
             updateSportPA();
         }
     }

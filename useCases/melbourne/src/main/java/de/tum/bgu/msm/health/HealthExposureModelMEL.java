@@ -2,6 +2,7 @@ package de.tum.bgu.msm.health;
 
 import cern.colt.map.tfloat.OpenIntFloatHashMap;
 import com.google.common.collect.Iterables;
+import com.google.common.math.LongMath;
 import de.tum.bgu.msm.container.DataContainer;
 import de.tum.bgu.msm.data.*;
 import de.tum.bgu.msm.data.job.JobMEL;
@@ -33,7 +34,6 @@ import org.matsim.core.config.Config;
 import org.matsim.core.controler.ControlerDefaults;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
-import org.matsim.core.router.AStarLandmarksFactory;
 import org.matsim.core.router.FastMultiNodeDijkstraFactory;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
@@ -50,6 +50,7 @@ import routing.BicycleConfigGroup;
 import routing.TransportModeNetworkFilter;
 import routing.WalkConfigGroup;
 import routing.components.Gradient;
+import routing.components.JctStress;
 import routing.components.LinkAmbience;
 import routing.components.LinkStress;
 import routing.travelDisutility.ActiveDisutilityPrecalc;
@@ -147,7 +148,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 replyActivityLocationInfoFromFile(dayForHealthData);
                 logger.warn("Activity info for " + dayForHealthData + " loaded.");
-                
+                System.gc();
 
                 logger.warn("Run health exposure model for " + day);
 
@@ -231,7 +232,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 replyActivityLocationInfoFromFile(weekdays.contains(day) ? Day.thursday : day);
                 calculatePersonHealthExposuresAtHome(day);
                 ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
-                
+                System.gc();
             }
 
             // normalize person-level home-travel-activity exposure
@@ -502,7 +503,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             trafficFlowsByDayModeLinkHour.get(day).remove(modeAdjusted);
         }
         trafficFlowsByDayModeLinkHour.remove(day); // Clear entire day
-        
+        System.gc();
     }
 
     private void writeTrafficFlowsToCSV(int year, Day day, String mode, Network network) {
@@ -636,6 +637,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                         double totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptTotalTravelTime");
                         double totalInVehicleTime_s = (totalTravelTime_s - accessTime_s - egressTime_s);
                         double busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptBusTimeShare");
+                        double railInVehicleTime_s = totalInVehicleTime_s - busInVehicleTime_s;
 
                         if(Double.isInfinite(accessTime_s) || Double.isInfinite(egressTime_s)||Double.isInfinite(totalTravelTime_s)){
                             NO_PATH_TRIP.incrementAndGet();
@@ -653,21 +655,30 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             processPtLegExposures(trip, Mode.bus,  -1, busInVehicleTime_s, departureTimeInSeconds + accessTime_s);
                         }
 
-                        // rail/train part currently no exposure processed, but need to add up travel time
-                        trip.updateMatsimTravelTime(totalInVehicleTime_s-busInVehicleTime_s);
-                        ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
+                        // rail/train part currently no exposure processed, but need to add up travel time and fill up hour occupied array
+                        // currently we don't have dedicated pt simulation. so we don't know when bus/rail leg happens. we simply assume bus always happens first, then rail
+                        if (railInVehicleTime_s > 0) {
+                            processPtLegExposures(trip, Mode.train,  -1, railInVehicleTime_s, departureTimeInSeconds + accessTime_s + busInVehicleTime_s);
+                        }
 
                         processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, departureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
 
                         if(trip.isHomeBased()) {
                             calculateActivityExposures(trip);
+                            //TODO: trip.getDepartureReturnInMinutes() is calculated based on pt time from skim matrix.
+                            // for now it is fine to use trip.getDepartureReturnInMinutes(), because we don't simulate pt, we also use skim matrix for health exposure calculation
+                            // later, when we have matsim pt simulation, the departure time of return trip needs to be updated according to simulation outcome. - qin' May 2026
                             int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
 
-                            accessTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptAccess");
-                            egressTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptEgress");
-                            totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptTotalTravelTime");
+                            // MCR COMMENT MAY NOT RELATE TO MEL
+                            //Note that: the current pt skim matrix has been well-validated, it is not near symmetrical,
+                            // which leads to issues of some return trips having extreme longer pt travel time compared to their outbound trip
+                            // to tackle this issue with a simple approach, we just force the pt skim matrix to be symmetrical
+                            accessTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptAccess");
+                            egressTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptEgress");
+                            totalTravelTime_s = dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptTotalTravelTime");
                             totalInVehicleTime_s = (totalTravelTime_s - accessTime_s - egressTime_s);
-                            busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(destinationZone,originZone,3600 * 8, "ptBusTimeShare");
+                            busInVehicleTime_s =  totalInVehicleTime_s * dataContainer.getTravelTimes().getTravelTime(originZone,destinationZone,3600 * 8, "ptBusTimeShare");
 
                             if(Double.isInfinite(totalTravelTime_s)||Double.isInfinite(accessTime_s) || Double.isInfinite(egressTime_s)){
                                 NO_PATH_TRIP.incrementAndGet();
@@ -685,10 +696,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             }
 
                             // rail/train part currently no exposure processed, but need to add up travel time
-                            trip.updateMatsimTravelTime(totalInVehicleTime_s-busInVehicleTime_s);
-                            ((PersonHealth) siloPerson).updateWeeklyTravelSeconds((float) (totalInVehicleTime_s-busInVehicleTime_s));
+                            // rail/train part currently no exposure processed, but need to add up travel time and fill up hour occupied array
+                            // currently we don't have dedicated pt simulation. so we don't know when bus/rail leg happens. we simply assume bus always happens first, then rail
+                            if (railInVehicleTime_s > 0) {
+                                processPtLegExposures(trip, Mode.train,  -1, railInVehicleTime_s, returnDepartureTimeInSeconds + accessTime_s + busInVehicleTime_s);
+                            }
 
                             processPtLegExposures(trip, Mode.walk, egressTime_s * walkSpeed, egressTime_s, returnDepartureTimeInSeconds + accessTime_s + totalInVehicleTime_s);
+
                         }
                         int current = processedTrips.incrementAndGet();
                         if (current % logInterval == 0 || current == totalTrips) {
@@ -721,6 +736,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         double legExposureNo2 = 0.;
 
         float[] hourOccupied = new float[24*7];
+        float[] hourOccupiedByRail = new float[24*7];
 
         //Physical activity (assume access and egress walk)
         double legMarginalMet = PhysicalActivity.getMMet(legMode, legDist_m, legTime_s, null);
@@ -752,6 +768,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             hourOccupied[exactWeekHour] += (float) durationInThisHour;
 
+            if (legMode.equals(Mode.train)){
+                hourOccupiedByRail[exactWeekHour] += (float) durationInThisHour;
+                currentDayHour = nextDayHour;
+                continue;
+            }
+
             double legPartExposurePm25 = PollutionExposure.getLinkExposurePm25_newexp(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_PM25, legTime_s, legMarginalMet, "none", "none", 1);
             double legPartExposureNo2 = PollutionExposure.getLinkExposureNo2_newexp(legMode, properties.get().healthData.DEFAULT_ROAD_TRAFFIC_INCREMENTAL_NO2,legTime_s, legMarginalMet, "none", "none", 1);
 
@@ -779,6 +801,8 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 "no2", legExposureNo2ByHour
         ));
         siloPerson.updateWeeklyTravelActivityHourOccupied(hourOccupied);
+        siloPerson.updateWeeklyHourOccupiedByTransit(hourOccupied);
+        siloPerson.updateWeeklyHourOccupiedByRail(hourOccupiedByRail);
     }
 
     private void calculateTripHealthIndicator(List<Trip> trips, Day day, Mode mode) {
@@ -844,6 +868,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 // Create the travel time calculator using precomputation
                 travelTime = new BicycleTravelTimePreComp(scenario.getNetwork(), factorProvider);
+                //travelTime = new BicycleTravelTime(new BicycleLinkSpeedCalculatorImpl(scenario.getConfig()));
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),bicycleConfigGroup,travelTime);
                 break;
             default:
@@ -897,24 +922,6 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             Id<Vehicle> vehicleId = Id.createVehicleId(person.getId().toString());
                             String key = (mode.equals(Mode.walk)? TransportMode.walk : TransportMode.bike) + gender + age;
                             VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(Id.create(key, VehicleType.class));
-                            if (vehicleType == null) {
-                                logger.warn("NULL VEHICLE TYPE DETECTED - Trip: {}, Person: {}, Mode: {}, Purpose: {}, Sex: {}, Age: {}, Key: '{}', Available types count: {}",
-                                        trip.getId(),
-                                        person.getId(),
-                                        mode,
-                                        person.getAttributes().getAttribute("purpose"),
-                                        person.getAttributes().getAttribute("sex"),
-                                        person.getAttributes().getAttribute("age"),
-                                        key,
-                                        scenario.getVehicles().getVehicleTypes().size());
-
-                                // Log first 10 available vehicle type keys for comparison
-                                logger.warn("Sample vehicle type keys, for comparison: {}",
-                                        scenario.getVehicles().getVehicleTypes().keySet().stream()
-                                                .limit(10)
-                                                .map(Id::toString)
-                                                .collect(Collectors.joining(", ")));
-                            }
                             vehicle = fac.createVehicle(vehicleId,vehicleType);
                         }
 
@@ -926,7 +933,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                     "origin node: " + originNode + ", dest node: " + destinationNode);
                             NO_PATH_TRIP.getAndIncrement();
                         } else {
-                                calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
+                            calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
                         }
 
                         // Calculate exposures for activity & return trip (home-based trips only)
@@ -1307,6 +1314,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         PersonHealth siloPerson =  ((PersonHealth)dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson()));
         double sportweekmMETh =  siloPerson.getWeeklyMarginalMetHoursSport();
 
+
         for(double currentDayHour = startDayHour; currentDayHour < endDayHour;) {
             //check if start hour is already next day, it could be that trip starts at 23:30, after travelling (e.g. 40 mins), activity start time is next day
             if(currentDayHour >= 24){
@@ -1373,9 +1381,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 //TODO: should we eliminate ndvi exposure in night?
                 activityGreenExposure += activityLocation.getNdvi() * durationInThisHour;
 
-            }else{
-                logger.warn("No receiver point info found for rpId: " + rpId + " tripId: " + trip.getTripId());
             }
+            /*else{
+                logger.warn("No receiver point info found for rpId: " + rpId + " tripId: " + trip.getTripId());
+            }*/
 
             currentDayHour = nextDayHour;
         }
@@ -1444,9 +1453,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                     // Green ndvi
                     ndviExposure += activityLocation.getNdvi() * remainingHour;
-                }else{
+                }/*else{
                     logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
-                }
+                }*/
             }
 
 
@@ -1463,8 +1472,10 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
     private void calculatePersonHealthExposureMetrics() {
         for(Person person : dataContainer.getHouseholdDataManager().getPersons()) {
-            float sumHour = 0.f;
-            float sumNightHour = 0.f;
+            float sumActualHourForAirExposure = 0.f;
+            float sumActualHourForGreenExposure = 0.f;
+            float sumActualHourForNoiseExposure = 0.f;
+            float sumActualHourForNoiseExposureNight = 0.f;
             float sumExposurePM25_normalized = 0.f;
             float sumExposureNo2_normalized = 0.f;
             float sumExposureNoise = 0.f;
@@ -1473,12 +1484,21 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             Map<String, float[]> weeklyPollutionExposures = ((PersonHealth) person).getWeeklyPollutionExposures();
             float[] weeklyNoiseExposureByHour = ((PersonHealth) person).getWeeklyNoiseExposureByHour();
             float[] hourOccupied = ((PersonHealth) person).getWeeklyTravelActivityHourOccupied();
-
+            float[] hourOccupiedByTransit = ((PersonHealth) person).getWeeklyHourOccupiedByTransit();
+            float[] hourOccupiedByRail = ((PersonHealth) person).getWeeklyHourOccupiedByRail();
 
             for (int weekHour = 0;  weekHour < hourOccupied.length; weekHour++) {
                 int dayHour = weekHour % 24;
 
-                sumHour += Math.max(1, hourOccupied[weekHour]);
+                float actualHourForAirExposure = Math.max(1, hourOccupied[weekHour]) - hourOccupiedByRail[weekHour];
+                sumActualHourForAirExposure += actualHourForAirExposure;
+
+                float actualHourForGreenExposure = Math.max(1, hourOccupied[weekHour]) - hourOccupiedByTransit[weekHour];
+                sumActualHourForGreenExposure += actualHourForGreenExposure;
+
+                float actualHourForNoiseExposure = Math.max(1, hourOccupied[weekHour]) - hourOccupiedByTransit[weekHour];
+                sumActualHourForNoiseExposure += actualHourForNoiseExposure;
+
 
                 double min_ventilation_rate = 0.;
                 if (dayHour <= 7  || dayHour > 23 ){
@@ -1489,16 +1509,27 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     min_ventilation_rate = 0.61;
                 }
 
-                sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/Math.max(1, hourOccupied[weekHour])/min_ventilation_rate;
-                sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/Math.max(1, hourOccupied[weekHour])/min_ventilation_rate;
+                if (actualHourForAirExposure > 0) {
+                    sumExposurePM25_normalized += weeklyPollutionExposures.get("pm2.5")[weekHour]/actualHourForAirExposure/min_ventilation_rate;
+                    sumExposureNo2_normalized += weeklyPollutionExposures.get("no2")[weekHour]/actualHourForAirExposure/min_ventilation_rate;
+                }
 
+                if (actualHourForNoiseExposure > 0) {
+                    float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]/actualHourForNoiseExposure));
+                    sumExposureNoise += hourlyNoiseLevel;
 
-                float hourlyNoiseLevel = (float) NoiseMetrics.getHourlyNoiseLevel(dayHour, (weeklyNoiseExposureByHour[weekHour]/Math.max(1, hourOccupied[weekHour])));
-                sumExposureNoise += hourlyNoiseLevel;
+                    if (dayHour <= 7  || dayHour > 23 ){
+                        sumActualHourForNoiseExposureNight += actualHourForNoiseExposure;
+                        sumExposureNoiseNight += hourlyNoiseLevel;
+                    }
+                }
 
-                if (dayHour <= 7  || dayHour > 23 ){
-                    sumNightHour += Math.max(1, hourOccupied[weekHour]);
-                    sumExposureNoiseNight += hourlyNoiseLevel;
+                if (actualHourForNoiseExposure < 0) {
+                    logger.warn("Person id: " + person.getId() + "has negative hour for noise exposure at hour: " + weekHour);
+                }
+
+                if (actualHourForAirExposure < 0) {
+                    logger.warn("Person id: " + person.getId() + "has negative hour for air exposure at hour: " + weekHour);
                 }
             }
 
@@ -1506,18 +1537,19 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             ((PersonHealth) person).setWeeklyExposureByPollutantNormalised(
                     Map.of(
-                            "pm2.5", (float) (sumExposurePM25_normalized / 168.),
-                            "no2", (float) (sumExposureNo2_normalized / 168.)
+                            "pm2.5", (float) (sumExposurePM25_normalized / sumActualHourForAirExposure),
+                            "no2", (float) (sumExposureNo2_normalized / sumActualHourForAirExposure)
                     )
             );
 
-            float Lden = (float) (10 * Math.log10(sumExposureNoise / sumHour));
-            float Lnight = (float) (10 * Math.log10(sumExposureNoiseNight / sumNightHour));
+            //
+            float Lden = (float) (10 * Math.log10(sumExposureNoise / sumActualHourForNoiseExposure));
+            float Lnight = (float) (10 * Math.log10(sumExposureNoiseNight / sumActualHourForNoiseExposureNight));
             ((PersonHealth) person).setWeeklyNoiseExposuresNormalised (Lden);
             ((PersonHealthMEL) person).setNoiseHighAnnoyedPercentage((float) NoiseMetrics.getHighAnnoyedPercentage(Lden));
             ((PersonHealthMEL) person).setNoiseHighSleepDisturbancePercentage((float) NoiseMetrics.getHighSleepDisturbancePercentage(Lnight));
 
-            ((PersonHealth) person).setWeeklyGreenExposuresNormalised(((PersonHealthMEL) person).getWeeklyNdviExposure() / sumHour);
+            ((PersonHealth) person).setWeeklyGreenExposuresNormalised(((PersonHealthMEL) person).getWeeklyNdviExposure() / sumActualHourForGreenExposure);
         }
     }
 
@@ -1531,7 +1563,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             JobMEL job = (JobMEL)dataContainer.getJobDataManager().getJobFromId(tripDestinationMicroId);
             if(job != null) {
                 if("poi".equals(job.getMicrolocationType())) {
-                    return "job" + job.getMicroBuildingId();
+                    return "poi" + job.getMicroBuildingId();
                 }else if("zoneCentroid".equals(job.getMicrolocationType())) {
                     return "zone" + job.getMicroBuildingId();
                 }
@@ -1841,9 +1873,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                         // Green ndvi
                         ndviExposure += activityLocation.getNdvi();
-                    } else {
+                    }/* else {
                         logger.warn("No receiver point info found for rpId: " + rpId + " personId: " + person.getId());
-                    }
+                    }*/
                 }
 
 
@@ -1858,7 +1890,7 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
             }
 
             ((DataContainerHealth)dataContainer).getActivityLocations().values().forEach(activityLocation -> {activityLocation.reset();});
-            
+            System.gc();
         }
 
 
