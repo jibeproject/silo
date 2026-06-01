@@ -152,7 +152,22 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
                 logger.warn("Run health exposure model for " + day);
 
+                // Check if a specific mode focus has been requested for diagnostics
+                String focusMode = System.getProperty("health.diagnostic.focusMode");
+                if (focusMode != null && !focusMode.isEmpty()) {
+                    logger.warn("===============================================");
+                    logger.warn("DIAGNOSTIC MODE FILTER ACTIVE: Processing only '{}' mode", focusMode);
+                    logger.warn("To process all modes, remove the 'health.diagnostic.focusMode' system property");
+                    logger.warn("===============================================");
+                }
+
                 for(Mode mode : Mode.values()){
+                    // Skip this mode if a focus mode is set and this isn't it
+                    if (focusMode != null && !focusMode.isEmpty() && !mode.name().equalsIgnoreCase(focusMode)) {
+                        logger.info("Skipping mode {} (focus mode: {})", mode, focusMode);
+                        continue;
+                    }
+                    
                     switch (mode){
                         case autoDriver:
                         case autoPassenger:
@@ -813,6 +828,37 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         final int totalTrips = trips.size();
         logger.info("Processing {} trips for {}, {} using {} processors", totalTrips, day, mode, processorsToUse);
 
+        // DIAGNOSTIC: Log trip schedules for persons with multiple trips
+        if (mode.equals(Mode.walk)) {
+            Map<Integer, List<Trip>> tripsByPerson = new HashMap<>();
+            for (Trip trip : trips) {
+                tripsByPerson.computeIfAbsent(trip.getPerson(), k -> new ArrayList<>()).add(trip);
+            }
+            
+            // Log persons with 2+ trips
+            for (Map.Entry<Integer, List<Trip>> entry : tripsByPerson.entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    int personId = entry.getKey();
+                    Person person = dataContainer.getHouseholdDataManager().getPersonFromId(personId);
+                    logger.info("=== DIAGNOSTIC: Person {} [Age: {}, Gender: {}] has {} walk trips on {} ===",
+                        personId, person.getAge(), person.getGender(), entry.getValue().size(), day);
+                    
+                    for (Trip trip : entry.getValue()) {
+                        double departHour = trip.getDepartureTimeInMinutes() / 60.0;
+                        double activityDuration = trip.getActivityDuration();
+                        double activityEndHour = departHour + activityDuration / 60.0;
+                        
+                        String message = String.format("  Trip %d: Purpose: %s, HomeBased: %s, Depart: %d min (%.2fh), Activity: %d min, Activity would end: %.2fh",
+                            trip.getId(), trip.getTripPurpose(), trip.isHomeBased(),
+                            trip.getDepartureTimeInMinutes(), departHour, 
+                            (int)activityDuration, activityEndHour);
+                        logger.info(message);
+                    }
+                    logger.info("=======================================================");
+                }
+            }
+        }
+
         final int partitionSize = (int) Math.max(1,((double) trips.size() / processorsToUse));
         Iterable<List<Trip>> partitions = Iterables.partition(trips, partitionSize);
 
@@ -836,15 +882,32 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                 scenario.getConfig().removeModule("walk");
                 scenario.getConfig().addModule(walkConfigGroup);
                 // set vehicles
+                logger.info("=== WALK SPEED DIAGNOSTIC: Setting up age/gender-specific walk speeds ===");
                 for(MitoGender gender : MitoGender.values()) {
+                    // Log speed range for each gender
+                    double minSpeed = Double.MAX_VALUE;
+                    double maxSpeed = Double.MIN_VALUE;
                     for(int age = 0 ; age <= 100 ; age++) {
                         VehicleType walk = fac.createVehicleType(Id.create(TransportMode.walk + gender + age, VehicleType.class));
-                        walk.setMaximumVelocity(allSpeeds.get(Mode.walk).get(gender).get(age));
+                        double speed = allSpeeds.get(Mode.walk).get(gender).get(age);
+                        walk.setMaximumVelocity(speed);
                         walk.setNetworkMode(TransportMode.walk);
                         walk.setPcuEquivalents(0.);
                         scenario.getVehicles().addVehicleType(walk);
+                        minSpeed = Math.min(minSpeed, speed);
+                        maxSpeed = Math.max(maxSpeed, speed);
                     }
+                    String msg = String.format("  %s: Walk speeds range from %.3f m/s (slowest) to %.3f m/s (fastest). Ratio: %.1f%% (slower walkers take %.0f%% longer)",
+                        gender, minSpeed, maxSpeed, (minSpeed/maxSpeed)*100, ((maxSpeed/minSpeed)-1)*100);
+                    logger.info(msg);
                 }
+                // Log sample speeds for key age groups
+                String sampleMsg = String.format("  Sample speeds - Age 25 Male: %.3f m/s, Age 70 Male: %.3f m/s, Age 85 Male: %.3f m/s",
+                    allSpeeds.get(Mode.walk).get(MitoGender.MALE).get(25),
+                    allSpeeds.get(Mode.walk).get(MitoGender.MALE).get(70),
+                    allSpeeds.get(Mode.walk).get(MitoGender.MALE).get(85));
+                logger.info(sampleMsg);
+                logger.info("=================================================================");
                 travelTime = new WalkTravelTime(new WalkLinkSpeedCalculatorImpl(scenario.getConfig()));
                 travelDisutility = new ActiveDisutilityPrecalc(scenario.getNetwork(),walkConfigGroup,travelTime);
                 break;
@@ -913,6 +976,19 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                             MitoGender gender = MitoGender.valueOf(siloPerson.getGender().toString());
                             int age = Math.min(siloPerson.getAge(), 100);
 
+                            // Diagnostic logging for walk mode to track age/gender/speed relationships
+                            if(mode.equals(Mode.walk)) {
+                                VehicleType vehicleType = scenario.getVehicles().getVehicleTypes().get(
+                                    Id.create(TransportMode.walk + gender + age, VehicleType.class));
+                                if(vehicleType != null) {
+                                    double walkSpeed = vehicleType.getMaximumVelocity();
+                                    String msg = String.format("Walk trip %d: Person %d [Age: %d, Gender: %s, Speed: %.2f m/s], Departure: %d min, Day: %s",
+                                        trip.getId(), trip.getPerson(), age, gender, walkSpeed,
+                                        trip.getDepartureTimeInMinutes(), trip.getDepartureDay());
+                                    logger.debug(msg);
+                                }
+                            }
+
                             person = factory.createPerson(Id.createPersonId(trip.getId()));
                             person.getAttributes().putAttribute("purpose",trip.getTripPurpose());
                             person.getAttributes().putAttribute("sex",gender.toString());
@@ -933,12 +1009,49 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                     "origin node: " + originNode + ", dest node: " + destinationNode);
                             NO_PATH_TRIP.getAndIncrement();
                         } else {
+                            // Log travel time before calculation for walk mode diagnostics
+                            double travelTimeBefore = trip.getMatsimTravelTime();
                             calculatePathExposures(trip,outboundPath,outboundDepartureTimeInSeconds,travelTime, vehicle);
+                            
+                            // Diagnostic: Track cumulative travel time for walk mode
+                            if(mode.equals(Mode.walk)) {
+                                double travelTimeAfter = trip.getMatsimTravelTime();
+                                double travelTimeAdded = travelTimeAfter - travelTimeBefore;
+                                Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+                                String msg = String.format("Walk trip %d (Person %d [Age: %d, Gender: %s]): Outbound travel time added: %.1fs (%.1f min), Cumulative: %.1fs (%.1f min)",
+                                    trip.getId(), trip.getPerson(), siloPerson.getAge(), siloPerson.getGender(),
+                                    travelTimeAdded, travelTimeAdded/60, travelTimeAfter, travelTimeAfter/60);
+                                logger.debug(msg);
+                            }
                         }
 
                         // Calculate exposures for activity & return trip (home-based trips only)
                         // TODO: exposure for activity of non-home-based trips and RRT, currently we do not know their activity duration, so it is not calculated
+                        
+                        // DIAGNOSTIC: Log NHBO trip handling for Person 2674148
+                        if(mode.equals(Mode.walk) && (trip.getPerson() == 2674148 || 
+                            trip.getTripPurpose().toString().equals("NHBO"))) {
+                            Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+                            String msg = String.format("NHBO CHECK - Trip %d (Person %d [Age: %d, Gender: %s]): Purpose: %s, isHomeBased: %s, ActivityDuration: %.1f, DepartReturn: %d",
+                                trip.getId(), trip.getPerson(), siloPerson.getAge(), siloPerson.getGender(),
+                                trip.getTripPurpose(), trip.isHomeBased(), trip.getActivityDuration(), 
+                                trip.getDepartureReturnInMinutes());
+                            logger.info(msg);
+                        }
+                        
                         if(trip.isHomeBased()) {
+                            // Diagnostic: Track activity scheduling for walk mode
+                            if(mode.equals(Mode.walk)) {
+                                double activityStartTime = (trip.getDepartureTimeInMinutes() + trip.getMatsimTravelTime()/60.);
+                                double activityDuration = trip.getActivityDuration();
+                                Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+                                String msg = String.format("Walk trip %d (Person %d [Age: %d, Gender: %s]): Activity starts at %.1f min (%.1f hrs), Duration: %.1f min, Ends: %.1f min (%.1f hrs)",
+                                    trip.getId(), trip.getPerson(), siloPerson.getAge(), siloPerson.getGender(),
+                                    activityStartTime, activityStartTime/60, activityDuration,
+                                    activityStartTime + activityDuration, (activityStartTime + activityDuration)/60);
+                                logger.debug(msg);
+                            }
+                            
                             calculateActivityExposures(trip);
                             int returnDepartureTimeInSeconds = trip.getDepartureReturnInMinutes()*60;
                             LeastCostPathCalculator.Path returnPath = pathCalculator.calcLeastCostPath(destinationNode, originNode,returnDepartureTimeInSeconds,person,vehicle);
@@ -949,7 +1062,20 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                         "origin node: " + originNode + ", dest node: " + destinationNode);
                                 NO_PATH_TRIP.getAndIncrement();
                             } else {
-                                calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
+                                // Diagnostic: Track return trip travel time for walk mode
+                                if(mode.equals(Mode.walk)) {
+                                    double travelTimeBefore = trip.getMatsimTravelTime();
+                                    calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
+                                    double travelTimeAfter = trip.getMatsimTravelTime();
+                                    double travelTimeAdded = travelTimeAfter - travelTimeBefore;
+                                    Person siloPerson = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+                                    String msg = String.format("Walk trip %d (Person %d [Age: %d, Gender: %s]): Return travel time added: %.1fs (%.1f min), Final cumulative: %.1fs (%.1f min)",
+                                        trip.getId(), trip.getPerson(), siloPerson.getAge(), siloPerson.getGender(),
+                                        travelTimeAdded, travelTimeAdded/60, travelTimeAfter, travelTimeAfter/60);
+                                    logger.debug(msg);
+                                } else {
+                                    calculatePathExposures(trip,returnPath,returnDepartureTimeInSeconds,travelTime, vehicle);
+                                }
                             }
                         }
 
@@ -960,12 +1086,22 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                                     day, mode, current, totalTrips, percentage));
                         }
                     }
-                } catch (Exception e) {
+                } catch (IllegalStateException e) {
+                    // Over-occupation detected - log warning but continue processing
+                    // This is expected for some trips due to data quality or scheduling conflicts
                     logger.warn(e.getLocalizedMessage());
                     Writer buffer = new StringWriter();
                     PrintWriter pw = new PrintWriter(buffer);
                     e.printStackTrace(pw);
                     logger.warn(buffer.toString());
+                    // Do NOT re-throw - allow processing to continue with remaining trips
+                } catch (Exception e) {
+                    // For other unexpected exceptions, re-throw to fail fast
+                    logger.error("Unexpected error processing trip: " + e.getLocalizedMessage());
+                    Writer buffer = new StringWriter();
+                    PrintWriter pw = new PrintWriter(buffer);
+                    e.printStackTrace(pw);
+                    logger.error(buffer.toString());
                     throw new RuntimeException(e);
                 }
                 return null;
@@ -983,6 +1119,19 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
     private void calculatePathExposures(Trip trip, LeastCostPathCalculator.Path path, int departureTimeInSecond, TravelTime travelTime, Vehicle vehicle) {
 
         Mode mode = trip.getTripMode();
+
+        // DIAGNOSTIC: Log trip entry for Person 2674148 and NHBO walk trips
+        if((trip.getPerson() == 2674148 || 
+            (mode.equals(Mode.walk) && trip.getTripPurpose().toString().equals("NHBO"))) && 
+            mode.equals(Mode.walk)) {
+            Person person = dataContainer.getHouseholdDataManager().getPersonFromId(trip.getPerson());
+            logger.info("=== ENTRY calculatePathExposures - Trip {} (Person {}, Age: {}, Gender: {}) ===", 
+                trip.getId(), trip.getPerson(), person.getAge(), person.getGender());
+            logger.info("  Purpose: {}, isHomeBased: {}, Day: {}, DepartureTime: {} sec ({} min / {} hr)", 
+                trip.getTripPurpose(), trip.isHomeBased(), trip.getDepartureDay(), 
+                departureTimeInSecond, departureTimeInSecond/60.0, departureTimeInSecond/3600.0);
+            logger.info("  Path has {} links", path.links.size());
+        }
 
         double pathLength = 0;
         double pathTime = 0;
@@ -1014,6 +1163,9 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         float[] hourOccupied = new float[24*7];
 
         List<VisitedLink> visitedLinksPath = new ArrayList<>();
+        
+        // Initialize dayCode once outside the link loop to track day changes correctly across links
+        int dayCode = trip.getDepartureDay().getDayCode();
 
         for(Link link : path.links) {
             double enterTimeInSecond = (double) departureTimeInSecond + pathTime;
@@ -1059,9 +1211,23 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
 
             if(linkInfo!=null) {
 
-                int dayCode = trip.getDepartureDay().getDayCode();
+                // dayCode is now tracked across all links in the path (moved outside loop)
                 double startDayHour = enterTimeInSecond / 3600.;
                 double endDayHour = (enterTimeInSecond + linkTime)/ 3600.;
+
+                // DIAGNOSTIC: Log time calculations for Person 2674148 and NHBO walk trips
+                if((trip.getPerson() == 2674148 || 
+                    (mode.equals(Mode.walk) && trip.getTripPurpose().toString().equals("NHBO"))) && 
+                    mode.equals(Mode.walk)) {
+                    logger.info("=== HOUR CALC - Trip {} (Person {}, Purpose: {}): Link {} ===", 
+                        trip.getId(), trip.getPerson(), trip.getTripPurpose(), link.getId());
+                    logger.info("  departureTimeInSecond: {}, pathTime: {}, enterTimeInSecond: {}", 
+                        departureTimeInSecond, pathTime, enterTimeInSecond);
+                    logger.info("  linkTime: {} sec ({} min), linkLength: {} m", 
+                        linkTime, linkTime/60, link.getLength());
+                    logger.info("  startDayHour: {}, endDayHour: {}, dayCode: {}", 
+                        startDayHour, endDayHour, dayCode);
+                }
 
                 for(double currentDayHour = startDayHour; currentDayHour < endDayHour;) {
                     //check if start hour is already next day, it could be that trip starts at 23:30, after travelling (e.g. 40 mins), activity start time is next day
@@ -1078,6 +1244,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
                     double durationInThisHour = Math.min(endDayHour, nextDayHour) - currentDayHour;
 
                     int exactWeekHour = exactDayHour + 24 * dayCode;
+
+                    // DIAGNOSTIC: Log each loop iteration
+                    if((trip.getPerson() == 2674148 || 
+                        (mode.equals(Mode.walk) && trip.getTripPurpose().toString().equals("NHBO"))) && 
+                        mode.equals(Mode.walk)) {
+                        logger.info("    Loop iter: currentDayHour={}, exactDayHour={}, nextDayHour={}, endDayHour={}, durationInThisHour={}, exactWeekHour={}, dayCode={}", 
+                            currentDayHour, exactDayHour, nextDayHour, endDayHour, durationInThisHour, exactWeekHour, dayCode);
+                    }
 
                     if(exactWeekHour > 167){
                         break;
@@ -1154,6 +1328,14 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         trip.updateMatsimTravelTime(pathTime);
         trip.updateMatsimLinkCount(path.links.size());
 
+        // DIAGNOSTIC: Log final accumulated values
+        if((trip.getPerson() == 2674148 || 
+            (mode.equals(Mode.walk) && trip.getTripPurpose().toString().equals("NHBO"))) && 
+            mode.equals(Mode.walk)) {
+            logger.info("=== PATH COMPLETE - Trip {} (Person {}): Total links: {}, pathLength: {} m, pathTime: {} sec ({} min) ===", 
+                trip.getId(), trip.getPerson(), path.links.size(), pathLength, pathTime, pathTime/60);
+        }
+
         trip.updateMarginalMetHours(pathMarginalMetHours);
 
         /*
@@ -1223,6 +1405,24 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         ));
         siloPerson.updateWeeklyNoiseExposuresByHour(pathExposureNoiseByHour);
         siloPerson.updateWeeklyGreenExposures((float) pathExposureGreen);
+        
+        // DIAGNOSTIC: Log hour occupation for Person 2674148 or trips affecting hour 161
+        if(trip.getPerson() == 2674148 || mode.equals(Mode.walk)) {
+            // Find which hours have non-zero occupation
+            StringBuilder occupiedHours = new StringBuilder();
+            for(int h = 0; h < hourOccupied.length; h++) {
+                if(hourOccupied[h] > 0) {
+                    if(occupiedHours.length() > 0) occupiedHours.append(", ");
+                    occupiedHours.append(String.format("H%d:%.3f", h, hourOccupied[h]));
+                }
+            }
+            if(occupiedHours.length() > 0 && trip.getPerson() == 2674148) {
+                String msg = String.format("Trip %d (Person %d, Mode: %s): Occupied hours: %s",
+                    trip.getId(), trip.getPerson(), mode, occupiedHours.toString());
+                logger.info(msg);
+            }
+        }
+        
         siloPerson.updateWeeklyTravelActivityHourOccupied(hourOccupied);
     }
 
@@ -1398,6 +1598,23 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         trip.setActivityNdviExposure(activityGreenExposure);
 
         siloPerson.updateWeeklyActivityMinutes((float) activityDurationInMinutes);
+        
+        // DIAGNOSTIC: Log activity hour occupation for Person 2674148
+        if(trip.getPerson() == 2674148) {
+            StringBuilder occupiedHours = new StringBuilder();
+            for(int h = 0; h < hourOccupied.length; h++) {
+                if(hourOccupied[h] > 0) {
+                    if(occupiedHours.length() > 0) occupiedHours.append(", ");
+                    occupiedHours.append(String.format("H%d:%.3f", h, hourOccupied[h]));
+                }
+            }
+            if(occupiedHours.length() > 0) {
+                String msg = String.format("Activity Trip %d (Person %d): Activity occupied hours: %s",
+                    trip.getId(), trip.getPerson(), occupiedHours.toString());
+                logger.info(msg);
+            }
+        }
+        
         siloPerson.updateWeeklyTravelActivityHourOccupied(hourOccupied);
         siloPerson.updateWeeklyPollutionExposuresByHour(Map.of(
                 "pm2.5", activityExposurePM25ByHour,

@@ -86,7 +86,7 @@ public class AccidentRateModelOsmMEL {
         }
 
          */
-        java.util.Properties props = MelbourneImplementationConfig.getMitoBaseProperties();
+        java.util.Properties props = MelbourneImplementationConfig.getMelbourneProperties();
         String networkFile = props.getProperty("MATSIM_NETWORK", "input/mito/trafficAssignment/network.xml");
         new MatsimNetworkReader(scenario.getNetwork()).readFile(networkFile);
         log.info("Reading network file... Done.");

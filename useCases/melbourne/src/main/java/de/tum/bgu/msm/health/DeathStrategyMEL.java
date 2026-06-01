@@ -52,14 +52,6 @@ public class DeathStrategyMEL implements DeathStrategy {
 
         double alpha = dataContainer.getHealthTransitionData().get(Diseases.all_cause_mortality).get(compositeKey);
 
-
-        /*calculate odds: odd_1 = transition_raw/(1 - transition_raw). transition_raw = 1 - exp-(transition_raw-this is the data)
-        multiply by relative risks: odd_2 = odd_1 * rr
-        translate to probability = probability = odd_2/(1+odd_2)
-
-         */
-
-
         //calculation of probabilities for mortality with first adjustment using rates*rr exposures/PA and then
         // adjusting probabilities (previous rate converted to probability) to odds ratios and multiplied by teh
         // disease rr and back to prob. I understand this was not done this way before.
@@ -75,28 +67,14 @@ public class DeathStrategyMEL implements DeathStrategy {
         }
 
 
-
-        //alpha = alpha / (1 - alpha);
-
         // risk factors
         Set<Diseases> currentDiseases = new HashSet<>(((PersonHealth) person).getCurrentDisease());
-        Set<Diseases> cancers = Set.of(
-                Diseases.breast_cancer,
-                Diseases.endometrial_cancer,
-                Diseases.colon_cancer,
-                Diseases.bladder_cancer,
-                //Diseases.esophageal_cancer,
-                //Diseases.gastric_cardia_cancer,
-                Diseases.head_neck_cancer,
-                //Diseases.liver_cancer,
-                Diseases.lung_cancer,
-                Diseases.rectum_cancer
-        );
         Set<Diseases> injuries = Set.of(
                 Diseases.severely_injured_car,
                 Diseases.severely_injured_bike,
                 Diseases.severely_injured_walk
         );
+
 
         if (Collections.disjoint(currentDiseases, injuries)) {
 
@@ -120,6 +98,7 @@ public class DeathStrategyMEL implements DeathStrategy {
             }
         }
 
+        // todo: what happens with people < 18
         if (!Collections.disjoint(currentDiseases, injuries)) {
             if (person.getGender().equals(Gender.MALE)) {
                 alpha *= 1.71;
@@ -130,6 +109,5 @@ public class DeathStrategyMEL implements DeathStrategy {
 
         return  (1 - Math.exp(-alpha));
 
-        //return alpha/(1+alpha);
     }
 }

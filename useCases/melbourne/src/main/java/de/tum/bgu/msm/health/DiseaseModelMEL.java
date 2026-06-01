@@ -20,16 +20,12 @@ import java.util.*;
 import java.util.logging.*;
 import java.util.stream.Collectors;
 
-import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
-
 public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListener {
     private static final Logger logger = LogManager.getLogger(DiseaseModelMEL.class);
 
     public DiseaseModelMEL(DataContainer dataContainer, Properties properties, Random random) {
         super(dataContainer, properties, random);
     }
-
-    static java.util.Properties projectProperties = getMelbourneProperties();
 
     @Override
     public void setup() {

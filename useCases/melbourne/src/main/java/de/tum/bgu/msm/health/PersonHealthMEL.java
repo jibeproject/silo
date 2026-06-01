@@ -1,5 +1,6 @@
 package de.tum.bgu.msm.health;
 
+import de.tum.bgu.msm.data.Day;
 import de.tum.bgu.msm.data.Ethnic;
 import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.household.Household;
@@ -9,11 +10,19 @@ import de.tum.bgu.msm.health.disease.Diseases;
 import de.tum.bgu.msm.health.disease.HealthExposures;
 import de.tum.bgu.msm.schools.PersonWithSchool;
 import de.tum.bgu.msm.utils.SiloUtil;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.*;
 
 public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
 
+    private static final Logger logger = LogManager.getLogger(PersonHealthMEL.class);
+    
+    // Tolerance for floating-point comparison to account for rounding errors
+    // A trip that occupies exactly 1.0 hours should not trigger over-allocation
+    private static final float HOUR_OCCUPATION_TOLERANCE = 0.001f;
+    
     private final Person delegate;
 
     private int schoolType = 0;
@@ -362,22 +371,63 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
     @Override
     public void updateWeeklyTravelActivityHourOccupied(float[] hourOccupied) {
         for(int i=0; i<hourOccupied.length; i++) {
-            float newValue = this.weeklyTravelActivityHourOccupied[i] + hourOccupied[i];
+            if (hourOccupied[i] == 0) continue; // Skip empty hours for efficiency
             
-            if (newValue > 1.0f) {
-                int day = i / 24;
+            float previousValue = this.weeklyTravelActivityHourOccupied[i];
+            float newValue = previousValue + hourOccupied[i];
+            
+            // Record to diagnostics (captures stack trace to identify source)
+            // Day is reconstructed from hour index
+            int dayCode = i / 24;
+            Day day = dayCode == 0 ? Day.monday :
+                      dayCode == 1 ? Day.tuesday :
+                      dayCode == 2 ? Day.wednesday :
+                      dayCode == 3 ? Day.thursday :
+                      dayCode == 4 ? Day.friday :
+                      dayCode == 5 ? Day.saturday :
+                      dayCode == 6 ? Day.sunday : null;
+            ScheduleDiagnostics.recordHourUpdate(this.getId(), day, i, previousValue, 
+                                                hourOccupied[i], "update", -1, "unknown");
+            
+            // Check for over-allocation with tolerance for floating-point precision
+            // Using tolerance because 0.5 + 0.5 might yield 1.0000000001 due to float arithmetic
+            if (newValue > 1.0f + HOUR_OCCUPATION_TOLERANCE) {
+                // Log complete schedule before throwing exception
+                ScheduleDiagnostics.logPersonSchedule(this.getId());
+                
+                int dayIdx = i / 24;
                 int hour = i % 24;
                 String[] dayNames = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-                String dayName = day < 7 ? dayNames[day] : "Day" + day;
+                String dayName = dayIdx < 7 ? dayNames[dayIdx] : "Day" + dayIdx;
+                
+                // Include demographic info to test age/gender hypothesis
+                String demographics = String.format("[Age: %d, Gender: %s]", this.getAge(), this.getGender());
                 
                 throw new IllegalStateException(
-                    String.format("Person %d: Hour %d (%s %02d:00) would be over-occupied: %.4f + %.4f = %.4f (max: 1.0). " +
-                        "This indicates overlapping trips/activities. Check trip scheduling logic.", 
-                        this.getId(), i, dayName, hour, 
-                        this.weeklyTravelActivityHourOccupied[i], hourOccupied[i], newValue));
+                    String.format("Person %d %s: Hour %d (%s %02d:00) would be over-occupied: %.4f + %.4f = %.4f (max: 1.0 + tolerance: %.4f). " +
+                        "This indicates overlapping trips/activities. Check trip scheduling logic. " +
+                        "See diagnostic log for complete schedule.", 
+                        this.getId(), demographics, i, dayName, hour, 
+                        previousValue, hourOccupied[i], newValue, HOUR_OCCUPATION_TOLERANCE));
+            }
+            
+            // Log a warning if we're at or very close to the limit (within tolerance)
+            // This helps identify potential issues that are just barely acceptable
+            if (newValue > 1.0f && newValue <= 1.0f + HOUR_OCCUPATION_TOLERANCE) {
+                int dayIdx = i / 24;
+                int hour = i % 24;
+                String[] dayNames = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+                String dayName = dayIdx < 7 ? dayNames[dayIdx] : "Day" + dayIdx;
+                String demographics = String.format("[Age: %d, Gender: %s]", this.getAge(), this.getGender());
+                
+                logger.debug("Person {} {}: Hour {} ({} {:02d}:00) is at/near limit: {:.4f + {:.4f} = {:.4f} " +
+                    "(within tolerance {:.4f}, likely floating-point precision)", 
+                    this.getId(), demographics, i, dayName, hour, 
+                    previousValue, hourOccupied[i], newValue, HOUR_OCCUPATION_TOLERANCE);
             }
             
             if (newValue < 0.0f) {
+                ScheduleDiagnostics.logPersonSchedule(this.getId());
                 throw new IllegalStateException(
                     String.format("Person %d: hourOccupied[%d] would become negative: %.4f (logic error)", 
                         this.getId(), i, newValue));
@@ -396,22 +446,18 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
         this.relativeRisksByDisease = relativeRisksByDisease;
     }
 
-    @Override
     public Map<Diseases, Float> getCurrentDiseaseProb() {
         return currentDiseaseProb;
     }
 
-    @Override
     public List<Diseases> getCurrentDisease() {
         return currentDisease;
     }
 
-    @Override
     public Map<Integer, List<String>> getHealthDiseaseTracker() {
         return healthDiseaseTracker;
     }
 
-    @Override
     public void resetHealthData(){
         weeklyTravelSeconds = 0.f;
         weeklyActivityMinutes = 0.f;
@@ -470,12 +516,11 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
         return 0;
     }
 
-    @Override
+
     public EnumMap<Diseases, Float> getRandomNumByDisease() {
         return randomNumByDisease;
     }
 
-    @Override
     public EnumMap<Diseases, Float> getLastYearSurvivalRateByDisease() {
         return lastYearSurvivalRateByDisease;
     }
