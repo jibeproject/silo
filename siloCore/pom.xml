@@ -71,6 +71,15 @@
             <groupId>org.matsim.contrib</groupId>
             <artifactId>locationchoice</artifactId>
             <version>${matsimVersion}</version>
+            <exclusions>
+                <!-- otfvis is a desktop visualizer, unused by SILO. Its jogl/gluegen dependencies
+                     are only hosted on jogamp.org, whose maven repository is unreliable and
+                     breaks CI builds when unreachable. -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.matsim</groupId>
@@ -135,6 +144,12 @@
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
                 </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -157,6 +172,12 @@
                 <exclusion>
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
+                </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -181,6 +202,12 @@
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
                 </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -204,6 +231,12 @@
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
                 </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -226,6 +259,12 @@
                 <exclusion>
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
+                </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
