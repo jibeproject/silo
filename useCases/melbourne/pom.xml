@@ -49,6 +49,12 @@
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
                 </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -72,6 +78,12 @@
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
                 </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -94,6 +106,12 @@
                 <exclusion>
                     <groupId>jfree</groupId>
                     <artifactId>jfreechart</artifactId>
+                </exclusion>
+                <!-- otfvis (unused visualizer) needs jogl/gluegen from the unreliable jogamp.org
+                     repo, which breaks CI when unreachable -->
+                <exclusion>
+                    <groupId>org.matsim.contrib</groupId>
+                    <artifactId>otfvis</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
