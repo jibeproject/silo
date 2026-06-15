@@ -43,23 +43,47 @@ public class RunExposureHealthOffline {
         DataBuilderHealth.read(properties, dataContainer, config);
 
         // setup
+        AirPollutantModel airPollutantModel = null;
+        NoiseModel noiseModel = null;
+        final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
+        String day = "thursday";
+        String airPollutionFileCheckPath = outputDirectory + "linkConcentration_" + day + ".csv";
+        String noiseFileCheckPath = outputDirectory + "matsim/" + endYear + "/" + day + "/car/noise-analysis/receiverPoints/receiverPoints.csv";
+        if (OutputFileExists(airPollutionFileCheckPath)) {
+            logger.warn("Air pollution output exists ({}). Air pollution modelling will be skipped. Please delete existing results to re-run.",airPollutionFileCheckPath);
+        } else {
+            airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
+        }
+        if (OutputFileExists(noiseFileCheckPath)) {
+            logger.warn("Noise output exists ({}). Noise modelling will be skipped. Please delete existing results to re-run.",noiseFileCheckPath);
+        } else {
+            noiseModel = new NoiseModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
+        }
+        
         AccidentModelMEL accidentModel = new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         HealthExposureModelMEL exposureModelMEL = new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config);
         SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
 
-        // disease model only
-        // exposureModelMCR.setup();
-
         // runs
-        accidentModel.endYear(2018);
-        //exposureModelMCR.setup(); // read-in the exposure file
-        exposureModelMEL.endYear(2018);
-        sportPAModelMEL.endYear(2018);
+        if (!OutputFileExists(airPollutionFileCheckPath)) {
+            airPollutantModel.endYear(endYear);
+        }
+        if (!OutputFileExists(noiseFileCheckPath)) {
+            noiseModel.endYear(endYear);
+        }
+        accidentModel.endYear(endYear);
+        exposureModelMEL.setup(); // read-in the exposure file
+        exposureModelMEL.endYear(endYear);
+        sportPAModelMEL.endYear(endYear);
         diseaseModelMEL.setup();
-        diseaseModelMEL.endYear(2018);
+        diseaseModelMEL.endYear(endYear);
         dataContainer.endSimulation();
 
         logger.info("Finished SILO.");
+    }
+    
+    public static boolean OutputFileExists(String path) {
+        return Files.exists(Paths.get(path));
     }
 }
