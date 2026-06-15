@@ -33,7 +33,7 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
     private float weeklyMarginalMetHoursSport = 0.f;
     private Map<String, Double> weeklyAccidentRisks = new HashMap<>();
     private Map<String, float[]> weeklyExposureByPollutantByHour = new HashMap<>();
-    private Map<String, Float> weeklyExposureByPollutantNormalised;
+    private Map<String, Float> weeklyExposureByPollutantNormalised = new HashMap<>();
 
     private float[] weeklyNoiseExposureByHour = new float[24*7];
     private float weeklyNoiseExposureNormalised;
@@ -271,7 +271,10 @@ public class PersonHealthMCR implements PersonWithSchool, PersonHealth {
 
     @Override
     public float getWeeklyExposureByPollutantNormalised(String pollutant) {
-        return weeklyExposureByPollutantNormalised.get(pollutant);
+        // Default to 0.f for persons with no computed/loaded exposure (e.g. not present in the
+        // base exposure file and never processed by the exposure model in a simulated year),
+        // consistent with the noise/NDVI normalised getters and newborn defaults (BirthModelMCR).
+        return weeklyExposureByPollutantNormalised.getOrDefault(pollutant, 0.f);
     }
 
     @Override

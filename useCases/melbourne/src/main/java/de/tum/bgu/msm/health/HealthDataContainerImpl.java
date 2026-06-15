@@ -119,8 +119,14 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
     public void endSimulation() {
         delegate.endSimulation();
         writeDwellingsWithNoise(properties.main.endYear);
-        writePersonExposureData(properties.main.endYear);
-        writePersonRelativeRiskData(properties.main.endYear);
+        // Only write exposure/relative-risk if the exposure model actually ran in the end year;
+        // otherwise weeklyExposureByPollutantNormalised was never populated for these persons
+        // and the output would be meaningless (see endYear() for the matching guard).
+        if (properties.main.endYear == properties.main.startYear
+                || properties.healthData.exposureModelYears.contains(properties.main.endYear)) {
+            writePersonExposureData(properties.main.endYear);
+            writePersonRelativeRiskData(properties.main.endYear);
+        }
         writePersonDiseaseTrackData(properties.main.endYear);
     }
 
