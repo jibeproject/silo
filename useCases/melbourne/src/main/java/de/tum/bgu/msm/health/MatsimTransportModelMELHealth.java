@@ -53,6 +53,7 @@ import org.matsim.core.controler.ControlerDefaults;
 import org.matsim.core.controler.OutputDirectoryHierarchy;
 import org.matsim.core.network.NetworkUtils;
 import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.population.algorithms.XY2Links;
 import org.matsim.core.router.MainModeIdentifierImpl;
 import org.matsim.core.router.TripStructureUtils;
 import org.matsim.core.router.util.TravelDisutility;
@@ -314,6 +315,10 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
 
             logger.info("MATSim truck population: {}|{}|{}", day, year, populationCarTruck.getPersons().size());
 
+            // Capture freight person ids before MITO car plans are added, so we can pre-snap only
+            // the freight activities to truck links below (issue #66).
+            Set<Id<Person>> freightPersonIds = new HashSet<>(populationCarTruck.getPersons().keySet());
+
             // Through traffic not estimated for Melbourne; omitted
             // See Manchester implementation for approach for re-adding this
 
@@ -336,6 +341,24 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             //initialize scenario
             MutableScenario matsimScenario = (MutableScenario) ScenarioUtils.loadScenario(carTruckConfig);
             matsimScenario.setPopulation(populationCarTruck);
+
+            // Issue #66: pre-snap freight activities to the nearest TRUCK link.
+            // Freight plans contain only activity coordinates (no routes), so MATSim's
+            // PrepareForSimImpl snaps every activity to the nearest CAR link. Where that car link
+            // does not connect into the (sparser) truck network, the truck leg is routed from a
+            // different truck link and DefaultTurnAcceptanceLogic rejects the move, dropping the
+            // vehicle from the QSim (~4% of freight, generating tens of thousands of warnings).
+            // Assigning a truck linkId here makes MATSim's XY2Links skip these activities — it never
+            // overrides an existing linkId — so the truck departs and arrives on real truck links.
+            Network truckNetwork = extractModeSpecificNetwork(matsimScenario.getNetwork(), Collections.singleton(TransportMode.truck));
+            XY2Links freightXY2Links = new XY2Links(truckNetwork, matsimScenario.getActivityFacilities());
+            for (Id<Person> freightId : freightPersonIds) {
+                Person freightPerson = populationCarTruck.getPersons().get(freightId);
+                if (freightPerson != null) {
+                    freightXY2Links.run(freightPerson);
+                }
+            }
+            logger.info("Pre-snapped {} freight persons to nearest truck link (issue #66)", freightPersonIds.size());
 
             //set vehicle types, if not already set
             if (!matsimScenario.getVehicles().getVehicleTypes().containsKey(Id.create(TransportMode.car, VehicleType.class))) {
