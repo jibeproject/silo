@@ -579,7 +579,12 @@ public class HealthExposureModelMEL extends AbstractModel implements ModelUpdate
         ScenarioUtils.loadScenario(scenario);
 
         if (mode.equals(Mode.walk) || mode.equals(Mode.bicycle)) {
-            Network activeNetwork = extractModeSpecificNetwork(scenario.getNetwork(),new HashSet<>(Arrays.asList(TransportMode.bike, TransportMode.walk)));
+            // Restrict the routing network to the single mode being routed. On a combined
+            // bike+walk network, links that do not allow the routed mode (e.g. bike-only links
+            // during walk routing) get NaN disutility from ActiveDisutility, which corrupts
+            // least-cost path search and produced implausibly long walk paths (#175).
+            String networkMode = mode.equals(Mode.walk) ? TransportMode.walk : TransportMode.bike;
+            Network activeNetwork = extractModeSpecificNetwork(scenario.getNetwork(), Collections.singleton(networkMode));
             scenario.setNetwork(activeNetwork);
         }
 
