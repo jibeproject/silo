@@ -275,6 +275,27 @@ public final class MatsimTransportModelMELHealth implements TransportModel {
             );
             matsimScenario.setNetwork(activeNetwork);
 
+            // Pre-snap each active-mode agent's activities to its OWN mode network. On the combined
+            // bike+walk network MATSim would otherwise snap activities mode-agnostically, leaving e.g.
+            // a walk agent anchored to a bike-only link whose walk route starts on a different (walk)
+            // link -> DefaultTurnAcceptanceLogic rejects the move and the agent is lost. Assigning a
+            // mode-appropriate linkId here makes MATSim's XY2Links skip these activities (it never
+            // overrides an existing linkId). Mirrors the per-mode network restriction used for #175 in
+            // HealthExposureModelMEL.
+            Network walkSnapNetwork = extractModeSpecificNetwork(activeNetwork, Collections.singleton(TransportMode.walk));
+            Network bikeSnapNetwork = extractModeSpecificNetwork(activeNetwork, Collections.singleton(TransportMode.bike));
+            XY2Links walkXY2Links = new XY2Links(walkSnapNetwork, matsimScenario.getActivityFacilities());
+            XY2Links bikeXY2Links = new XY2Links(bikeSnapNetwork, matsimScenario.getActivityFacilities());
+            for (Person person : matsimScenario.getPopulation().getPersons().values()) {
+                String mode = (String) person.getAttributes().getAttribute("mode");
+                if (TransportMode.walk.equals(mode)) {
+                    walkXY2Links.run(person);
+                } else if (TransportMode.bike.equals(mode)) {
+                    bikeXY2Links.run(person);
+                }
+            }
+            logger.info("Pre-snapped active-mode activities to per-mode networks (issue #175 / turn-acceptance)");
+
             //set up controler
             final Controler controlerBikePed = new Controler(matsimScenario);
             controlerBikePed.addOverridingModule(new WalkModule());
