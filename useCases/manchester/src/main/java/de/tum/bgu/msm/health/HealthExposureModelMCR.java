@@ -1381,9 +1381,9 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
             if(activityLocation != null) {
 
                 //Air pollutant
-                double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5).get(exactDayHour)+
-                        activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5_non_exhaust).get(exactDayHour);
-                double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.NO2).get(exactDayHour);
+                double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5, new OpenIntFloatHashMap()).get(exactDayHour)+
+                        activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5_non_exhaust, new OpenIntFloatHashMap()).get(exactDayHour);
+                double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.NO2, new OpenIntFloatHashMap()).get(exactDayHour);
 
                 // Corin paper implementation
                 // double exposurePM25 = PollutionExposure.getActivityExposurePm25(durationInThisHour * 60, locationIncrementalPM25);
@@ -1460,9 +1460,9 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
 
                 if(activityLocation != null) {
                     //Air pollutant
-                    double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5).get(dayHour)+
-                            activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5_non_exhaust).get(dayHour);
-                    double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.NO2).get(dayHour);
+                    double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5, new OpenIntFloatHashMap()).get(dayHour)+
+                            activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5_non_exhaust, new OpenIntFloatHashMap()).get(dayHour);
+                    double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.NO2, new OpenIntFloatHashMap()).get(dayHour);
 
                     // Corin paper implementation
                     // exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25(remainingHour * 60, dayHour, locationIncrementalPM25);
@@ -1849,9 +1849,9 @@ public class HealthExposureModelMCR extends AbstractModel implements ModelUpdate
 
                     if (activityLocation != null) {
                         //Air pollutant
-                        double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5).get(dayHour) +
-                                activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.PM2_5_non_exhaust).get(dayHour);
-                        double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().get(Pollutant.NO2).get(dayHour);
+                        double locationIncrementalPM25 = activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5, new OpenIntFloatHashMap()).get(dayHour) +
+                                activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.PM2_5_non_exhaust, new OpenIntFloatHashMap()).get(dayHour);
+                        double locationIncrementalNO2 = activityLocation.getExposure2Pollutant2TimeBin().getOrDefault(Pollutant.NO2, new OpenIntFloatHashMap()).get(dayHour);
 
                         exposurePM25[weekHour] = (float) PollutionExposure.getHomeExposurePm25(60, dayHour, locationIncrementalPM25);
                         exposureNo2[weekHour] = (float) PollutionExposure.getHomeExposureNo2(60, dayHour, locationIncrementalNO2);
