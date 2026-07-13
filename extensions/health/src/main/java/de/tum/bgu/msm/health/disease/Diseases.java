@@ -24,7 +24,7 @@ public enum Diseases {
     myeloid_leukemia,
     myeloma,
     parkinson,
-    rectum_cancer,
+    //rectum_cancer, // no physical-activity dose-response; covered by colon_cancer ("colon and rectum cancer")
     //respiratory,
     stroke,
     severely_injured_car,

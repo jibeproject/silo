@@ -89,8 +89,8 @@ public class DeathStrategyMEL implements DeathStrategy {
                 //Diseases.gastric_cardia_cancer,
                 Diseases.head_neck_cancer,
                 //Diseases.liver_cancer,
-                Diseases.lung_cancer,
-                Diseases.rectum_cancer
+                Diseases.lung_cancer
+                //Diseases.rectum_cancer // removed: not in modelled disease scope
         );
         Set<Diseases> injuries = Set.of(
                 Diseases.severely_injured_car,
