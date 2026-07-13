@@ -49,12 +49,25 @@ public class RunExposureHealthOffline {
         String day = "thursday";
         String airPollutionFileCheckPath = outputDirectory + "linkConcentration_" + day + ".csv";
         String noiseFileCheckPath = outputDirectory + "matsim/" + endYear + "/" + day + "/car/noise-analysis/receiverPoints/receiverPoints.csv";
-        if (OutputFileExists(airPollutionFileCheckPath)) {
+
+        // Air pollution and noise outputs are only consumed by the exposure model's event
+        // processing. When a base exposure file is supplied (and the end year is not an
+        // exposure model year), exposures are read from that file instead, so both models
+        // can be skipped regardless of whether their outputs exist on this machine.
+        boolean exposureProcessingNeeded =
+                (properties.healthData.baseExposureFile == null && endYear == properties.main.startYear)
+                || properties.healthData.exposureModelYears.contains(endYear);
+        if (!exposureProcessingNeeded) {
+            logger.warn("Base exposure file supplied ({}); exposure event processing, air pollution and noise modelling will be skipped.",
+                    properties.healthData.baseExposureFile);
+        } else if (OutputFileExists(airPollutionFileCheckPath)) {
             logger.warn("Air pollution output exists ({}). Air pollution modelling will be skipped. Please delete existing results to re-run.",airPollutionFileCheckPath);
         } else {
             airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
         }
-        if (OutputFileExists(noiseFileCheckPath)) {
+        if (!exposureProcessingNeeded) {
+            // noise model skipped along with air pollution (see warning above)
+        } else if (OutputFileExists(noiseFileCheckPath)) {
             logger.warn("Noise output exists ({}). Noise modelling will be skipped. Please delete existing results to re-run.",noiseFileCheckPath);
         } else {
             noiseModel = new NoiseModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
@@ -65,11 +78,11 @@ public class RunExposureHealthOffline {
         SportPAModelMEL sportPAModelMEL = new SportPAModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
         DiseaseModelMEL diseaseModelMEL = new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom());
 
-        // runs
-        if (!OutputFileExists(airPollutionFileCheckPath)) {
+        // runs (models are only constructed above when they actually need to run)
+        if (airPollutantModel != null) {
             airPollutantModel.endYear(endYear);
         }
-        if (!OutputFileExists(noiseFileCheckPath)) {
+        if (noiseModel != null) {
             noiseModel.endYear(endYear);
         }
         accidentModel.endYear(endYear);
