@@ -3,6 +3,7 @@ package de.tum.bgu.msm.health;
 import de.tum.bgu.msm.container.DataContainer;
 import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.ZoneMEL;
+import de.tum.bgu.msm.data.dwelling.Dwelling;
 import de.tum.bgu.msm.data.person.Gender;
 import de.tum.bgu.msm.data.person.Occupation;
 import de.tum.bgu.msm.data.person.Person;
@@ -18,6 +19,10 @@ import java.util.*;
 public class SportPAModelMEL extends AbstractModel implements ModelUpdateListener {
     private static final Logger logger = LogManager.getLogger(SportPAModelMEL.class);
     private Map<String,Map<String,Double>> coef = new HashMap<>();
+
+    // Median observed SA1 IRSD decile, used for dwellings in zones without an ABS SEIFA
+    // IRSD score (low-population/low-response SA1s are not assigned SEIFA indices)
+    private static final int IRSD_MEDIAN_DECILE = 6;
 
     public SportPAModelMEL(DataContainer dataContainer, Properties properties, Random random) {
         super(dataContainer, properties, random);
@@ -46,10 +51,24 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
     }
 
     public void updateSportPA() {
+        int missingIrsdCount = 0;
         for(Person person : dataContainer.getHouseholdDataManager().getPersons()) {
             PersonHealthMEL personHealth = (PersonHealthMEL) person;
+
+            // The NHS-derived hurdle model is fitted on adults (18+) only
+            if (person.getAge() < 18) {
+                personHealth.setWeeklyMarginalMetHoursSport(0.f);
+                continue;
+            }
+
+            int irsdDecile = lookupIrsdDecile(person);
+            if (irsdDecile < 1 || irsdDecile > 10) {
+                irsdDecile = IRSD_MEDIAN_DECILE;
+                missingIrsdCount++;
+            }
+
             //zero model
-            double utility = getPredictor(person, coef.get("zero"));
+            double utility = getPredictor(person, coef.get("zero"), irsdDecile);
             double zeroProb = Math.exp(utility)/(1+Math.exp(utility));
 
             if (random.nextDouble() < zeroProb) {
@@ -58,12 +77,16 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
             }
 
             //linear model weekly hour
-            double otherSport_wkhr = getPredictor(person, coef.get("linear"));
+            double otherSport_wkhr = getPredictor(person, coef.get("linear"), irsdDecile);
             personHealth.setWeeklyMarginalMetHoursSport((float) Math.max(0, otherSport_wkhr));
+        }
+        if (missingIrsdCount > 0) {
+            logger.warn("Sport PA model: {} adults live in zones without an IRSD decile; median decile {} used.",
+                    missingIrsdCount, IRSD_MEDIAN_DECILE);
         }
     }
 
-    private double getPredictor(Person person, Map<String, Double> coef) {
+    private double getPredictor(Person person, Map<String, Double> coef, int irsdDecile) {
         double predictor = 0.0;
 
         // Intercept
@@ -98,13 +121,23 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
             predictor += handleCoefficient(coef, "student_status");
         }
 
-//        // Socio-economic disadvantage deciles
-//        int zoneId = dataContainer.getRealEstateDataManager().getDwelling(person.getHousehold().getDwellingId()).getZoneId();
-//        ZoneMEL zoneMEL = (ZoneMEL) dataContainer.getGeoData().getZones().get(zoneId);
-//
-//        predictor += zoneMEL.getSocioEconomicDisadvantageDeciles() * handleCoefficient(coef, "IRSD");
+        // Socio-economic disadvantage decile (SA1 IRSD, 1 = most disadvantaged, 10 = least)
+        predictor += irsdDecile * handleCoefficient(coef, "IRSD");
 
         return predictor;
+    }
+
+    private int lookupIrsdDecile(Person person) {
+        Dwelling dwelling = dataContainer.getRealEstateDataManager().getDwelling(person.getHousehold().getDwellingId());
+        if (dwelling == null) {
+            return Integer.MIN_VALUE;
+        }
+        ZoneMEL zoneMEL = (ZoneMEL) dataContainer.getGeoData().getZones().get(dwelling.getZoneId());
+        if (zoneMEL == null) {
+            return Integer.MIN_VALUE;
+        }
+        // zones with NA IRSD in the zonal data are read as Integer.MIN_VALUE
+        return zoneMEL.getSocioEconomicDisadvantageDeciles();
     }
 
     private double handleCoefficient(Map<String, Double> coef, String coefName) {

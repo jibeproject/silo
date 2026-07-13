@@ -75,7 +75,11 @@ public class RunExposureHealthOffline {
         accidentModel.endYear(endYear);
         exposureModelMEL.setup(); // read-in the exposure file
         exposureModelMEL.endYear(endYear);
-        sportPAModelMEL.endYear(endYear);
+        // Sport PA is cheap and independent of the MATSim-based exposure processing, so
+        // always recompute it here. Calling endYear() instead would skip it whenever a
+        // base exposure file is supplied (same gate as the exposure model), preventing
+        // re-runs with updated sportPAmodel coefficients from taking effect.
+        sportPAModelMEL.updateSportPA();
         diseaseModelMEL.setup();
         diseaseModelMEL.endYear(endYear);
         dataContainer.endSimulation();

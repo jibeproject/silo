@@ -45,6 +45,15 @@ public class HealthExposuresReader {
             int posInjBike = SiloUtil.findPositionInArray("severeFatalInjuryBike", header);
             int posInjWalk = SiloUtil.findPositionInArray("severeFatalInjuryWalk", header);
 
+            // Restore the remaining columns written by HealthPersonWriter so that a
+            // re-written exposure file is a faithful round-trip of its input
+            // (guarded, in case an older exposure file lacks them).
+            int posTravelSec = SiloUtil.findPositionInArray("totalTravelTime_sec", header);
+            int posActivityMin = SiloUtil.findPositionInArray("totalActivityTime_min", header);
+            int posHomeMin = SiloUtil.findPositionInArray("totalTimeAtHome_min", header);
+            int posNoiseHA = SiloUtil.findPositionInArray("exposure_noise_HA", header);
+            int posNoiseHSD = SiloUtil.findPositionInArray("exposure_noise_HSD", header);
+
             // read line
             while ((recString = in.readLine()) != null) {
                 recCount++;
@@ -67,6 +76,23 @@ public class HealthExposuresReader {
                     pp.setWeeklyExposureByPollutantNormalised(exposureMap);
                     pp.setWeeklyNoiseExposuresNormalised(Float.parseFloat(lineElements[posNoise]));
                     pp.setWeeklyGreenExposuresNormalised(Float.parseFloat(lineElements[posNdvi]));
+
+                    // weekly travel/activity fields start at 0, so the update methods act as setters here
+                    if (posTravelSec >= 0) {
+                        pp.updateWeeklyTravelSeconds(Float.parseFloat(lineElements[posTravelSec]));
+                    }
+                    if (posActivityMin >= 0) {
+                        pp.updateWeeklyActivityMinutes(Float.parseFloat(lineElements[posActivityMin]));
+                    }
+                    if (posHomeMin >= 0) {
+                        pp.setWeeklyHomeMinutes(Float.parseFloat(lineElements[posHomeMin]));
+                    }
+                    if (posNoiseHA >= 0) {
+                        pp.setNoiseHighAnnoyedPercentage(Float.parseFloat(lineElements[posNoiseHA]));
+                    }
+                    if (posNoiseHSD >= 0) {
+                        pp.setNoiseHighSleepDisturbancePercentage(Float.parseFloat(lineElements[posNoiseHSD]));
+                    }
                 }
             }
         } catch (IOException e) {
