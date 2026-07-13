@@ -27,6 +27,13 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
     public SportPAModelMEL(DataContainer dataContainer, Properties properties, Random random) {
         super(dataContainer, properties, random);
         this.coef = new SportPAmodelCoefficientReader().readData(properties.healthData.sportPAmodel);
+        if (coef.get("linear").containsKey("sigma")) {
+            logger.info("Sport PA model: log-normal positive stage detected (sigma = {}, cap = {}).",
+                    coef.get("linear").get("sigma"), coef.get("linear").getOrDefault("cap", Double.MAX_VALUE));
+        } else {
+            logger.warn("Sport PA model: no 'sigma' row in {}; using legacy linear-scale positive stage.",
+                    properties.healthData.sportPAmodel);
+        }
     }
 
     @Override
@@ -76,9 +83,21 @@ public class SportPAModelMEL extends AbstractModel implements ModelUpdateListene
                 continue;
             }
 
-            //linear model weekly hour
-            double otherSport_wkhr = getPredictor(person, coef.get("linear"), irsdDecile);
-            personHealth.setWeeklyMarginalMetHoursSport((float) Math.max(0, otherSport_wkhr));
+            //positive stage weekly mMET hours
+            Map<String, Double> linearCoef = coef.get("linear");
+            double predictor = getPredictor(person, linearCoef, irsdDecile);
+            Double sigma = linearCoef.get("sigma");
+            double otherSport_wkhr;
+            if (sigma == null) {
+                // legacy coefficients: linear predictor is mMET hours/week directly
+                otherSport_wkhr = Math.max(0, predictor);
+            } else {
+                // log-normal positive stage: predictor is log(mMET hours/week); draw from
+                // the conditional distribution and cap at the survey-truncation maximum
+                double cap = linearCoef.getOrDefault("cap", Double.MAX_VALUE);
+                otherSport_wkhr = Math.min(cap, Math.exp(predictor + sigma * random.nextGaussian()));
+            }
+            personHealth.setWeeklyMarginalMetHoursSport((float) otherSport_wkhr);
         }
         if (missingIrsdCount > 0) {
             logger.warn("Sport PA model: {} adults live in zones without an IRSD decile; median decile {} used.",
