@@ -1,5 +1,6 @@
 package de.tum.bgu.msm.health;
 
+import de.tum.bgu.msm.data.EducationLevel;
 import de.tum.bgu.msm.data.Ethnic;
 import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.household.Household;
@@ -20,6 +21,9 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
     private int schoolPlace = 0;
     private int schoolId = -1;
     private Ethnic ethnic = null;
+    // "not yet attained or unknown" until read from the extended microdata or drawn by
+    // EducationAttainmentModelMEL; see EducationLevel.no
+    private EducationLevel educationLevel = EducationLevel.no;
 
     private float weeklyTravelSeconds = 0.f;
     private float weeklyActivityMinutes = 0.f;
@@ -186,6 +190,14 @@ public class PersonHealthMEL implements PersonWithSchool, PersonHealth {
 
     public void setEthnic(Ethnic ethnic) {
         this.ethnic = ethnic;
+    }
+
+    public EducationLevel getEducationLevel() {
+        return educationLevel;
+    }
+
+    public void setEducationLevel(EducationLevel educationLevel) {
+        this.educationLevel = educationLevel;
     }
 
     @Override

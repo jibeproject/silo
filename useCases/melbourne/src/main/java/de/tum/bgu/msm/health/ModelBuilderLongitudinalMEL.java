@@ -136,6 +136,10 @@ public class ModelBuilderLongitudinalMEL {
 
         //modelContainer.registerModelUpdateListener(new UpdateCarOwnershipModelMuc(dataContainer, properties, SiloUtil.provideNewRandom()));
 
+        // must precede the death model each year: registered annual models run in prepareYear,
+        // before events are created
+        modelContainer.registerModelUpdateListener(new EducationAttainmentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
+
         modelContainer.registerModelUpdateListener(new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
 
         modelContainer.registerModelUpdateListener(new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config));

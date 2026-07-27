@@ -111,6 +111,14 @@ public class DiseaseModelMEL extends AbstractModel implements ModelUpdateListene
 
     public void updateDiseaseProbability(Boolean adjustByRelativeRisk) {
         for (Diseases diseases : Diseases.values()) {
+            // All-cause mortality is handled by DeathModelMEL/DeathStrategyMEL, not here.
+            // updateHealthDiseaseStates() already skips it, so the probability computed below was
+            // never read; skipping it explicitly also avoids a per-person warning once the
+            // transition table keys mortality by education (a key shape this model does not use).
+            if (diseases.equals(Diseases.all_cause_mortality)) {
+                continue;
+            }
+
             if (((DataContainerHealth) dataContainer).getHealthTransitionData().get(diseases) == null) {
                 logger.warn("No health transition data for disease: " + diseases.name());
                 continue;

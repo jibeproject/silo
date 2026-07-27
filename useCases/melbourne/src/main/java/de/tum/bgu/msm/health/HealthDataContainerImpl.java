@@ -2,6 +2,7 @@ package de.tum.bgu.msm.health;
 
 import de.tum.bgu.msm.common.datafile.TableDataSet;
 import de.tum.bgu.msm.data.Day;
+import de.tum.bgu.msm.data.EducationLevel;
 import de.tum.bgu.msm.data.MitoGender;
 import de.tum.bgu.msm.data.Mode;
 import de.tum.bgu.msm.data.accessibility.Accessibility;
@@ -295,5 +296,19 @@ public class HealthDataContainerImpl implements DataContainerWithSchools, DataCo
         StringBuilder key = new StringBuilder();
         key.append(age).append("|").append(gender.name().toLowerCase()).append("|").append(location);
         return key.toString();
+    }
+
+    /**
+     * Melbourne-only overload adding education, used for all-cause mortality only.
+     *
+     * Mortality rates are disaggregated by education (see DeathStrategyMEL) whereas disease
+     * incidence rates are not, so the two key shapes coexist in the same transition table:
+     * the disease being looked up determines which applies. This is deliberately not on the
+     * {@link DataContainerHealth} interface, so Manchester and Munich are unaffected.
+     */
+    public String createTransitionLookupIndex(int age, Gender gender, String location,
+                                              EducationLevel education) {
+        return createTransitionLookupIndex(age, gender, location)
+                + "|" + education.name().toLowerCase();
     }
 }

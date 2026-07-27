@@ -18,6 +18,9 @@ public class PersonFactoryMELHealth implements PersonFactory {
     public Person giveBirth(Person parent, int id, Gender gender) {
         PersonHealthMEL pp = new PersonHealthMEL(id, 0, gender, Occupation.TODDLER, PersonRole.CHILD, 0, 0);
         pp.setEthnic(((PersonHealthMEL)parent).getEthnic());
+        // education is deliberately left unset: inheriting the parent's would assert perfect
+        // intergenerational transmission. EducationAttainmentModelMEL draws a level once the
+        // newborn reaches the attainment age, and mortality is unaffected until then.
         return pp;
     }
 
@@ -33,6 +36,9 @@ public class PersonFactoryMELHealth implements PersonFactory {
                 originalPerson.getAnnualIncome());
         duplicate.setDriverLicense(originalPerson.hasDriverLicense());
         duplicate.setSchoolId(((PersonHealthMEL) originalPerson).getSchoolId());
+        // a duplicate is the same person cloned, so both attributes carry over
+        duplicate.setEthnic(((PersonHealthMEL) originalPerson).getEthnic());
+        duplicate.setEducationLevel(((PersonHealthMEL) originalPerson).getEducationLevel());
         return duplicate;
     }
 }

@@ -2,6 +2,7 @@ package de.tum.bgu.msm.health.diseaseModelOffline;
 
 import de.tum.bgu.msm.container.ModelContainer;
 import de.tum.bgu.msm.health.DiseaseModelMEL;
+import de.tum.bgu.msm.health.EducationAttainmentModelMEL;
 import de.tum.bgu.msm.models.demography.birthday.BirthdayModel;
 import de.tum.bgu.msm.models.demography.birthday.BirthdayModelImpl;
 import de.tum.bgu.msm.models.demography.death.DeathModel;
@@ -30,6 +31,9 @@ public class ModelBuilderMEL {
                 null, null, null, null,
                 null, null, null, null);
 
+
+        // assigns education to persons who cross the attainment age as the population ages
+        modelContainer.registerModelUpdateListener(new EducationAttainmentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
 
         modelContainer.registerModelUpdateListener(new DiseaseModelMEL(dataContainer,properties, SiloUtil.provideNewRandom()));
         return modelContainer;

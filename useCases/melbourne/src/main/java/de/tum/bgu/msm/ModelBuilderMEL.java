@@ -125,6 +125,8 @@ public class ModelBuilderMEL {
 
         //modelContainer.registerModelUpdateListener(new AccidentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
 
+        modelContainer.registerModelUpdateListener(new EducationAttainmentModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));
+
         modelContainer.registerModelUpdateListener(new HealthExposureModelMEL(dataContainer, properties, SiloUtil.provideNewRandom(),config));
 
         //modelContainer.registerModelUpdateListener(new DiseaseModelMEL(dataContainer, properties, SiloUtil.provideNewRandom()));

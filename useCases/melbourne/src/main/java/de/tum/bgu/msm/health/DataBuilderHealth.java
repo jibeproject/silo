@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 
 import static de.tum.bgu.msm.util.CsvWriter.writeTableDataSetToCSV;
+import static uk.cam.mrc.phm.util.MelbourneImplementationConfig.getMelbourneProperties;
 
 public class DataBuilderHealth {
 
@@ -50,6 +51,8 @@ public class DataBuilderHealth {
     }
 
     static Logger logger = LogManager.getLogger(DataBuilderHealth.class);
+
+    static java.util.Properties projectProperties = getMelbourneProperties();
 
     public static HealthDataContainerImpl getModelDataForMelbourne(Properties properties, Config config) {
 
@@ -118,6 +121,21 @@ public class DataBuilderHealth {
         personFile += "_" + year + ".csv";
         PersonReader personReader = new PersonReaderMELHealth(dataContainer.getHouseholdDataManager());
         personReader.readData(personFile);
+
+        // Melbourne-only, so configured in project.properties rather than the shared siloCore
+        // Properties. Unset leaves education unassigned and mortality falls back to the
+        // un-disaggregated rates.
+        String personExtendedFileName = projectProperties.getProperty("person.extended.file.ascii");
+        if (personExtendedFileName != null && !personExtendedFileName.trim().isEmpty()) {
+            String personExtendedFile = properties.main.baseDirectory
+                    + personExtendedFileName.trim() + "_" + year + ".csv";
+            if (new File(personExtendedFile).exists()) {
+                new PersonExtendedReaderMEL(dataContainer.getHouseholdDataManager()).readData(personExtendedFile);
+            } else {
+                logger.warn("No extended person data file found at {}. Mortality will use "
+                        + "un-disaggregated rates for all persons.", personExtendedFile);
+            }
+        }
 
         DwellingReader ddReader = new DwellingReaderMEL(dataContainer.getRealEstateDataManager(), dataContainer);
         String dwellingsFile = properties.main.baseDirectory + properties.realEstate.dwellingsFileName + "_" + year + ".csv";

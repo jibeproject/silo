@@ -72,6 +72,9 @@ public class DeathModelMEL extends AbstractModel implements DeathModel {
 
     @Override
     public void endYear(int year) {
+        if (strategy instanceof DeathStrategyMEL) {
+            ((DeathStrategyMEL) strategy).logAndResetFallbackTally(year);
+        }
     }
 
     @Override

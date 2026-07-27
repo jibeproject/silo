@@ -39,6 +39,8 @@ public class HealthPersonWriter implements PersonWriter {
         pwp.print(",");
         pwp.print("ethnicity");
         pwp.print(",");
+        pwp.print("education");
+        pwp.print(",");
         pwp.print("zone");
         pwp.print(",");
         pwp.print("totalTravelTime_sec");
@@ -96,6 +98,8 @@ public class HealthPersonWriter implements PersonWriter {
             pwp.print(",");
             pwp.print(((PersonHealthMEL)pp).getEthnic().toString());
             pwp.print(",");
+            pwp.print(((PersonHealthMEL)pp).getEducationLevel().toString());
+            pwp.print(",");
             pwp.print(dataContainer.getRealEstateDataManager().getDwelling(pp.getHousehold().getDwellingId()).getZoneId());
             pwp.print(",");
             pwp.print(((PersonHealthMEL)pp).getWeeklyTravelSeconds());
@@ -147,6 +151,8 @@ public class HealthPersonWriter implements PersonWriter {
         pwp.print(",");
         pwp.print("ethnicity");
         pwp.print(",");
+        pwp.print("education");
+        pwp.print(",");
         pwp.print("zone");
 
 
@@ -181,6 +187,8 @@ public class HealthPersonWriter implements PersonWriter {
             pwp.print(((PersonHealthMEL)pp).getSchoolId());
             pwp.print(",");
             pwp.print(((PersonHealthMEL)pp).getEthnic().toString());
+            pwp.print(",");
+            pwp.print(((PersonHealthMEL)pp).getEducationLevel().toString());
             pwp.print(",");
             pwp.print(dataContainer.getRealEstateDataManager().getDwelling(pp.getHousehold().getDwellingId()).getZoneId());
 
