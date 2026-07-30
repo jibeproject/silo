@@ -21,6 +21,7 @@ public class HealthTransitionTableReader {
         logger.info("Reading path " + path);
 
         EnumMap<Diseases, Map<String, Double>> healthDiseaseData = new EnumMap<>(Diseases.class);
+        Set<String> diseasesNotInLookup = new LinkedHashSet<>();
 
         String recString = "";
         int recCount = 0;
@@ -43,7 +44,15 @@ public class HealthTransitionTableReader {
                 int age = Integer.parseInt(lineElements[posAge]);
                 Gender gender = Gender.valueOf(Integer.parseInt(lineElements[posGender]));
                 String location = lineElements[posLocation];
-                Diseases diseases = Diseases.valueOf(lineElements[posCause]);
+                // Diseases we no longer analyse remain in the input tables; skip those rows rather
+                // than aborting the read.
+                Diseases diseases;
+                try {
+                    diseases = Diseases.valueOf(lineElements[posCause]);
+                } catch (IllegalArgumentException e) {
+                    diseasesNotInLookup.add(lineElements[posCause]);
+                    continue;
+                }
                 double prob = Double.parseDouble(lineElements[posProb]);
 
                 String compositeKey = dataContainer.createTransitionLookupIndex(age,gender,location);
@@ -56,6 +65,9 @@ public class HealthTransitionTableReader {
             logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
         } catch (IllegalArgumentException e){
             logger.warn(e.getMessage());
+        }
+        if (!diseasesNotInLookup.isEmpty()) {
+            logger.warn("Diseases not present in lookup (rows skipped): " + diseasesNotInLookup);
         }
         logger.info("Finished reading health disease prob table from csv file.");
         return healthDiseaseData;

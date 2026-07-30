@@ -52,6 +52,7 @@ public class DoseResponseLookupReader {
     private void readDiseaseOutcomeLookupTable(String path){
         String recString = "";
         int recCount = 0;
+        Set<String> diseasesNotInLookup = new LinkedHashSet<>();
         try {
             BufferedReader in = new BufferedReader(new FileReader(path));
             recString = in.readLine();
@@ -70,7 +71,15 @@ public class DoseResponseLookupReader {
             while ((recString = in.readLine()) != null) {
                 recCount++;
                 String[] lineElements = recString.split(",");
-                Diseases diseases = Diseases.valueOf(lineElements[posDisease]);
+                // Diseases we no longer analyse remain in the input tables; treat rows naming a
+                // disease absent from the Diseases enum as though they were not in the file.
+                Diseases diseases;
+                try {
+                    diseases = Diseases.valueOf(lineElements[posDisease]);
+                } catch (IllegalArgumentException e) {
+                    diseasesNotInLookup.add(lineElements[posDisease]);
+                    continue;
+                }
                 int airPollutantPM = Integer.parseInt(lineElements[posAirPollutantPM]);
                 int airPollutantNO = Integer.parseInt(lineElements[posAirPollutantNO]);
                 int physicalActivity = Integer.parseInt(lineElements[posPhysicalActivity]);
@@ -105,6 +114,10 @@ public class DoseResponseLookupReader {
             logger.fatal("IO Exception caught reading dose-response file: " + path);
             logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
             logger.fatal(e.getMessage());
+        }
+        if (!diseasesNotInLookup.isEmpty()) {
+            logger.warn("Diseases not present in lookup (dose-response rows skipped): "
+                    + diseasesNotInLookup);
         }
     }
 
