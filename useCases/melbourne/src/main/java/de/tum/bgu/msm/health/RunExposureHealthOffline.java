@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
@@ -47,8 +48,20 @@ public class RunExposureHealthOffline {
         NoiseModel noiseModel = null;
         final String outputDirectory = properties.main.baseDirectory + "scenOutput/" + properties.main.scenarioName + "/";
         String day = "thursday";
-        String airPollutionFileCheckPath = outputDirectory + "linkConcentration_" + day + ".csv";
+        // Both concentration files are written together by PollutantConcentrationWriter, so both must
+        // be present and current before the air pollutant model can be skipped.
+        String[] airPollutionFileCheckPaths = {
+                outputDirectory + "linkConcentration_" + day + ".csv",
+                outputDirectory + "locationConcentration_" + day + ".csv"};
         String noiseFileCheckPath = outputDirectory + "matsim/" + endYear + "/" + day + "/car/noise-analysis/receiverPoints/receiverPoints.csv";
+
+        // Concentrations are keyed by MATSim link id and by activity location id. Link ids come from
+        // the network, but activity location ids ("dd*", "job*", "ss*") are renumbered whenever the
+        // synthetic population is rebuilt, and link emissions change whenever MATSim is re-run. Cached
+        // concentrations older than either input therefore describe a population that no longer exists.
+        String[] airPollutionInputPaths = {
+                properties.main.baseDirectory + properties.realEstate.dwellingsFileName + "_" + properties.main.startYear + ".csv",
+                outputDirectory + "matsim/" + endYear + "/" + day + "/car/" + endYear + ".output_events.xml.gz"};
 
         // Air pollution and noise outputs are only consumed by the exposure model's event
         // processing. When a base exposure file is supplied (and the end year is not an
@@ -60,8 +73,9 @@ public class RunExposureHealthOffline {
         if (!exposureProcessingNeeded) {
             logger.warn("Base exposure file supplied ({}); exposure event processing, air pollution and noise modelling will be skipped.",
                     properties.healthData.baseExposureFile);
-        } else if (OutputFileExists(airPollutionFileCheckPath)) {
-            logger.warn("Air pollution output exists ({}). Air pollution modelling will be skipped. Please delete existing results to re-run.",airPollutionFileCheckPath);
+        } else if (OutputsAreCurrent(airPollutionFileCheckPaths, airPollutionInputPaths)) {
+            logger.warn("Air pollution output exists and is newer than its inputs ({}). Air pollution modelling will be skipped. Please delete existing results to re-run.",
+                    String.join(", ", airPollutionFileCheckPaths));
         } else {
             airPollutantModel = new AirPollutantModel(dataContainer, properties, SiloUtil.provideNewRandom(), config);
         }
@@ -102,5 +116,46 @@ public class RunExposureHealthOffline {
     
     public static boolean OutputFileExists(String path) {
         return Files.exists(Paths.get(path));
+    }
+
+    /**
+     * True when every cached output exists and none is older than any of the inputs it was derived
+     * from, i.e. when the cached results can safely be reused instead of regenerated. Missing inputs
+     * are ignored so that a run is never blocked by a path that does not apply to this scenario.
+     */
+    public static boolean OutputsAreCurrent(String[] outputPaths, String[] inputPaths) {
+        long newestInput = Long.MIN_VALUE;
+        for (String inputPath : inputPaths) {
+            Path input = Paths.get(inputPath);
+            if (!Files.exists(input)) {
+                logger.warn("Cannot check whether cached results are up to date: input {} not found.", inputPath);
+                continue;
+            }
+            try {
+                newestInput = Math.max(newestInput, Files.getLastModifiedTime(input).toMillis());
+            } catch (IOException e) {
+                logger.warn("Cannot read modification time of input {}; assuming cached results are stale.", inputPath);
+                return false;
+            }
+        }
+
+        for (String outputPath : outputPaths) {
+            Path output = Paths.get(outputPath);
+            if (!Files.exists(output)) {
+                logger.warn("Cached result {} is missing; it will be regenerated.", outputPath);
+                return false;
+            }
+            try {
+                if (Files.getLastModifiedTime(output).toMillis() < newestInput) {
+                    logger.warn("Cached result {} is older than its inputs and will be regenerated. "
+                            + "Reusing it would apply results computed for a superseded population or network.", outputPath);
+                    return false;
+                }
+            } catch (IOException e) {
+                logger.warn("Cannot read modification time of {}; it will be regenerated.", outputPath);
+                return false;
+            }
+        }
+        return true;
     }
 }

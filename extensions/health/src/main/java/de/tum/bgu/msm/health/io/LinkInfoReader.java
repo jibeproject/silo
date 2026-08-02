@@ -31,6 +31,8 @@ public class LinkInfoReader {
 
         String recString = "";
         int recCount = 0;
+        int unmatchedCount = 0;
+        String firstUnmatchedId = null;
         try {
             BufferedReader in = new BufferedReader(new FileReader(path));
             recString = in.readLine();
@@ -52,7 +54,10 @@ public class LinkInfoReader {
                 float value = Float.parseFloat(lineElements[posValue]);
 
                 if (dataContainer.getLinkInfo().get(linkId)==null){
-                    logger.error("Link " + linkId + " does not exist in Link Info container.");
+                    if (firstUnmatchedId == null) {
+                        firstUnmatchedId = linkId.toString();
+                    }
+                    unmatchedCount++;
                     continue;
                 }
 
@@ -70,7 +75,26 @@ public class LinkInfoReader {
             logger.fatal("IO Exception caught reading link concentration file: " + path);
             logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
         }
+        reportUnmatched("link concentration", path, recCount, unmatchedCount, firstUnmatchedId);
         logger.info("Finished reading " + recCount + " links with concentration.");
+    }
+
+    /**
+     * Logs unmatched link ids as a single summary rather than one line per record. Link ids are
+     * stable across synthetic population rebuilds, so a mismatch here means the file was written
+     * against a different network.
+     */
+    private void reportUnmatched(String dataDescription, String path, int recCount, int unmatchedCount,
+                                 String firstUnmatchedId) {
+        if (unmatchedCount == 0) {
+            return;
+        }
+        logger.warn(String.format(
+                "%,d of %,d %s records (%.1f%%) reference links that do not exist in the Link Info "
+                        + "container, starting with '%s'. This file may have been written against a "
+                        + "different network. File: %s",
+                unmatchedCount, recCount, dataDescription,
+                (recCount == 0 ? 1d : (double) unmatchedCount / recCount) * 100, firstUnmatchedId, path));
     }
 
     public void readNoiseLevelData(DataContainerHealth dataContainer, String outputDirectory, Day day) {
@@ -88,15 +112,24 @@ public class LinkInfoReader {
     }
 
     private int processNoiseFile(DataContainerHealth dataContainer, String filePath, int hourBinZeroBased) {
-        return NoiseDataReader.readNoiseFile(filePath, 0, 1, (linkIdStr, noiseLevel) -> {
+        int[] unmatched = new int[1];
+        String[] firstUnmatchedId = new String[1];
+
+        int recCount = NoiseDataReader.readNoiseFile(filePath, 0, 1, (linkIdStr, noiseLevel) -> {
             Id<Link> linkId = Id.createLinkId(linkIdStr);
 
             if (dataContainer.getLinkInfo().get(linkId) == null) {
-                logger.warn("Link " + linkId + " does not exist in Link Info container.");
+                if (firstUnmatchedId[0] == null) {
+                    firstUnmatchedId[0] = linkIdStr;
+                }
+                unmatched[0]++;
                 return;
             }
 
             dataContainer.getLinkInfo().get(linkId).getNoiseLevel2TimeBin().put(hourBinZeroBased, noiseLevel);
         });
+
+        reportUnmatched("noise emission", filePath, recCount, unmatched[0], firstUnmatchedId[0]);
+        return recCount;
     }
 }

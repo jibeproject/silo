@@ -21,12 +21,23 @@ public class ActivityLocationInfoReader {
 
     private final static Logger logger = LogManager.getLogger(ActivityLocationInfoReader.class);
 
+    /**
+     * Fraction of unmatched records above which the input is treated as belonging to a different
+     * synthetic population vintage rather than as isolated data gaps. Activity location ids
+     * ("dd*", "job*", "ss*") are renumbered whenever the synthetic population is rebuilt, so a
+     * stale concentration file matches almost nothing and would otherwise assign every dwelling
+     * the exposures of an unrelated location.
+     */
+    private final static double MAX_UNMATCHED_SHARE = 0.01;
+
     public void readConcentrationData(DataContainerHealth dataContainer, String path){
 
         logger.info("Reading location concentration data from csv file");
 
         String recString = "";
         int recCount = 0;
+        int unmatchedCount = 0;
+        String firstUnmatchedId = null;
         try {
             BufferedReader in = new BufferedReader(new FileReader(path));
             recString = in.readLine();
@@ -48,7 +59,11 @@ public class ActivityLocationInfoReader {
                 float value = Float.parseFloat(lineElements[posValue]);
 
                 if (dataContainer.getActivityLocations().get(locationId)==null){
-                    logger.error("Location " + locationId + " does not exist in activity location container.");
+                    if (firstUnmatchedId == null) {
+                        firstUnmatchedId = locationId;
+                    }
+                    unmatchedCount++;
+                    continue;
                 }
 
                 Map<Pollutant, OpenIntFloatHashMap> exposure2Pollutant2TimeBin =  dataContainer.getActivityLocations().get(locationId).getExposure2Pollutant2TimeBin();
@@ -65,7 +80,32 @@ public class ActivityLocationInfoReader {
             logger.fatal("IO Exception caught reading location concentration file: " + path);
             logger.fatal("recCount = " + recCount + ", recString = <" + recString + ">");
         }
+        reportUnmatched("location concentration", path, recCount, unmatchedCount, firstUnmatchedId);
         logger.info("Finished reading " + recCount + " locations with concentration.");
+    }
+
+    /**
+     * Logs unmatched activity location ids as a single summary, and aborts when so few match that
+     * the file cannot describe the current synthetic population. Reporting per record would emit
+     * millions of lines, and continuing would produce plausible-looking but wrong exposures.
+     */
+    private void reportUnmatched(String dataDescription, String path, int recCount, int unmatchedCount,
+                                 String firstUnmatchedId) {
+        if (unmatchedCount == 0) {
+            return;
+        }
+        double unmatchedShare = recCount == 0 ? 1d : (double) unmatchedCount / recCount;
+        String message = String.format(
+                "%,d of %,d %s records (%.1f%%) reference activity locations that do not exist, "
+                        + "starting with '%s'. File: %s",
+                unmatchedCount, recCount, dataDescription, unmatchedShare * 100, firstUnmatchedId, path);
+        if (unmatchedShare > MAX_UNMATCHED_SHARE) {
+            throw new IllegalStateException(message
+                    + " -- this file was almost certainly generated from a different synthetic population."
+                    + " Activity location ids are renumbered whenever the population is rebuilt, so delete"
+                    + " this file and regenerate it against the current population before re-running.");
+        }
+        logger.warn(message);
     }
 
     public void readNoiseLevelData(DataContainerHealth dataContainer, String path) {
@@ -82,9 +122,15 @@ public class ActivityLocationInfoReader {
     }
 
     private int processNoiseFile(DataContainerHealth dataContainer, String filePath, int hourBinZeroBased) {
-        return NoiseDataReader.readNoiseFile(filePath, 0, 1, (receiverPointId, noiseLevel) -> {
+        int[] unmatched = new int[1];
+        String[] firstUnmatchedId = new String[1];
+
+        int recCount = NoiseDataReader.readNoiseFile(filePath, 0, 1, (receiverPointId, noiseLevel) -> {
             if (dataContainer.getActivityLocations().get(receiverPointId) == null) {
-                logger.error("Receiver point " + receiverPointId + " does not exist in receiver point container.");
+                if (firstUnmatchedId[0] == null) {
+                    firstUnmatchedId[0] = receiverPointId;
+                }
+                unmatched[0]++;
                 return;
             }
 
@@ -92,5 +138,8 @@ public class ActivityLocationInfoReader {
             dataContainer.getActivityLocations().get(receiverPointId).getNoiseLevel2TimeBin()
                     .put(hourBinZeroBased, Math.max(0, noiseLevel));
         });
+
+        reportUnmatched("noise immission", filePath, recCount, unmatched[0], firstUnmatchedId[0]);
+        return recCount;
     }
 }
