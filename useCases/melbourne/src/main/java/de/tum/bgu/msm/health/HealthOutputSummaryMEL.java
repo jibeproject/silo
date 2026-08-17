@@ -46,10 +46,15 @@ public class HealthOutputSummaryMEL {
 
     // Exposure file columns summarised in the statistics tables
     private static final String[] SUMMARY_COLUMNS = {
-            "mmetHr_walk", "mmetHr_cycle", "mmetHr_otherSport",
+            "mmetHr_walk", "mmetHr_cycle", "mmetHr_otherSport", "mmetHr_total",
             "exposure_normalised_pm25", "exposure_normalised_no2",
             "exposure_normalised_noise_Lden", "exposure_normalised_ndvi"
     };
+
+    private static final int MMET_WALK = 0;
+    private static final int MMET_CYCLE = 1;
+    private static final int MMET_OTHER_SPORT = 2;
+    private static final int MMET_TOTAL = 3;
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
@@ -64,6 +69,7 @@ public class HealthOutputSummaryMEL {
         Map<String, Integer> zoneIrsd = zonePath == null ? Map.of() : readZoneIrsd(zonePath);
 
         ExposureData data = readExposure(exposurePath, zoneIrsd);
+
         System.out.printf("%nRead %,d persons from %s%n", data.n, exposurePath);
         if (zonePath != null) {
             System.out.printf("IRSD deciles joined from %s (%,d zones; %,d persons in zones without an IRSD decile)%n",
@@ -73,6 +79,7 @@ public class HealthOutputSummaryMEL {
         printPopulationOverview(data);
         printExposureSummaries(data);
         printSportByAgeSex(data);
+        printTotalByAgeSex(data);
         if (zonePath != null) {
             printSportByIrsd(data);
         }
@@ -129,10 +136,17 @@ public class HealthOutputSummaryMEL {
             int posGender = indexOf(header, "gender");
             int posZone = indexOf(header, "zone");
             int[] posSummary = new int[SUMMARY_COLUMNS.length];
+
             for (int c = 0; c < SUMMARY_COLUMNS.length; c++) {
-                posSummary[c] = indexOf(header, SUMMARY_COLUMNS[c]);
-                if (posSummary[c] < 0) {
-                    System.err.println("Column " + SUMMARY_COLUMNS[c] + " not found in " + path + "; reported as NaN.");
+                if (c == MMET_TOTAL) {
+                    posSummary[c] = -1; // derived below
+                } else {
+                    posSummary[c] = indexOf(header, SUMMARY_COLUMNS[c]);
+
+                    if (posSummary[c] < 0) {
+                        System.err.println("Column " + SUMMARY_COLUMNS[c]
+                                + " not found in " + path + "; reported as NaN.");
+                    }
                 }
             }
             String line;
@@ -144,9 +158,27 @@ public class HealthOutputSummaryMEL {
                     Integer decile = zoneIrsd.get(cols[posZone]);
                     if (decile != null) irsd = decile;
                 }
+
                 float[] values = new float[SUMMARY_COLUMNS.length];
+
                 for (int c = 0; c < SUMMARY_COLUMNS.length; c++) {
-                    values[c] = posSummary[c] < 0 ? Float.NaN : parseFloatSafe(cols[posSummary[c]]);
+                    values[c] = posSummary[c] < 0
+                            ? Float.NaN
+                            : parseFloatSafe(cols[posSummary[c]]);
+                }
+
+                // Derive total mMET hours/week.
+                // Return NaN if any component is missing, rather than treating missing data as zero.
+                if (!Float.isNaN(values[MMET_WALK])
+                        && !Float.isNaN(values[MMET_CYCLE])
+                        && !Float.isNaN(values[MMET_OTHER_SPORT])) {
+
+                    values[MMET_TOTAL] =
+                            values[MMET_WALK]
+                                    + values[MMET_CYCLE]
+                                    + values[MMET_OTHER_SPORT];
+                } else {
+                    values[MMET_TOTAL] = Float.NaN;
                 }
                 data.add(Integer.parseInt(cols[posId]),
                         Integer.parseInt(cols[posAge]),
@@ -226,6 +258,29 @@ public class HealthOutputSummaryMEL {
                         values.add(data.values[i][2]); // mmetHr_otherSport
                     }
                 }
+                printGroupStatsRow(AGE_BANDS[b], SEXES[s], values);
+            }
+        }
+    }
+
+    private static void printTotalByAgeSex(ExposureData data) {
+        printHeading("Total mMET hours/week (mmetHr_total) by age band and sex");
+
+        System.out.printf("%-10s %-8s %10s %8s %9s %8s %8s %8s %9s%n",
+                "Age band", "Sex", "n", "% zero", "mean",
+                "p25", "p50", "p75", "max");
+
+        for (int b = 0; b < AGE_BANDS.length; b++) {
+            for (int s = 0; s < SEXES.length; s++) {
+                List<Float> values = new ArrayList<>();
+
+                for (int i = 0; i < data.n; i++) {
+                    if (ageBand(data.age[i]) == b
+                            && sexIndex(data.gender[i]) == s) {
+                        values.add(data.values[i][MMET_TOTAL]);
+                    }
+                }
+
                 printGroupStatsRow(AGE_BANDS[b], SEXES[s], values);
             }
         }
